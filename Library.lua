@@ -6539,22 +6539,26 @@ do
             Image = "",
             ZIndex = 10,
             ScaleType = Info.ScaleType or Enum.ScaleType.Fit,
-            ResampleMode = Info.ResamplerMode or Enum.ResamplerMode.Default,
             Parent = LibraryMainOuterFrame,
             Name = "Mascot",
             Visible = true
         })
 
+        pcall(function()
+            Mascot.ResampleMode = Info.ResampleMode or Enum.ResamplerMode.Default
+        end)
+
         Library.MascotLabel = Mascot
 
         task.spawn(function()
             local AssetID = Url
-            if getcustomasset and writefile and isfile then
-                local Name = "spectre_mascot.png"
-                if not isfile(Name) then
-                    pcall(writefile, Name, game:HttpGet(Url))
+            if getcustomasset and writefile then
+                local Name = "spectre_mascot_v2.png" -- Changed name to bypass any old low-quality cache
+                local success, content = pcall(game.HttpGet, game, Url)
+                if success then
+                    pcall(writefile, Name, content)
+                    AssetID = getcustomasset(Name)
                 end
-                AssetID = getcustomasset(Name)
             end
             Mascot.Image = AssetID
         end)
