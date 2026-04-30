@@ -6521,9 +6521,9 @@ do
 
     function Library:SetMascot(Url, Info)
         Info = Info or {}
-        local Size = Info.Size or UDim2.fromOffset(250, 250)
-        local Position = Info.Position or UDim2.new(1, -100, 0, 0)
-        local AnchorPoint = Info.AnchorPoint or Vector2.new(0, 1)
+        local Size = Info.Size or UDim2.fromOffset(300, 300)
+        local Position = Info.Position or UDim2.new(1, -100, 0, 15)
+        local AnchorPoint = Info.AnchorPoint or Vector2.new(0.5, 1)
 
         if Library.MascotLabel then
             Library.MascotLabel:Destroy()
@@ -6537,10 +6537,12 @@ do
             Position = Position,
             AnchorPoint = AnchorPoint,
             Image = "",
-            ZIndex = 0, -- Set to 0 so it's behind the menu if overlapping, or adjust as needed
+            ZIndex = 0,
+            ScaleType = Info.ScaleType or Enum.ScaleType.Fit,
+            ResamplerMode = Info.ResamplerMode or Enum.ResamplerMode.Default,
             Parent = LibraryMainOuterFrame,
             Name = "Mascot",
-            Visible = true -- It will be hidden by the window's transparency loop if toggled off
+            Visible = true
         })
 
         Library.MascotLabel = Mascot
