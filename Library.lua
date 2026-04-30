@@ -286,6 +286,8 @@ local Library = {
     ShowCustomCursor = true;
     ShowToggleFrameInKeybinds = true;
     NotifyOnError = false; -- true = Library:Notify for SafeCallback (still warns in the developer console)
+    MascotLabel = nil;
+    MascotURL = nil;
 
     -- addons --
     SaveManager = nil;
@@ -6515,6 +6517,47 @@ do
         end)
 
         return Data
+    end
+
+    function Library:SetMascot(Url, Info)
+        Info = Info or {}
+        local Size = Info.Size or UDim2.fromOffset(250, 250)
+        local Position = Info.Position or UDim2.new(1, -100, 0, 0)
+        local AnchorPoint = Info.AnchorPoint or Vector2.new(0, 1)
+
+        if Library.MascotLabel then
+            Library.MascotLabel:Destroy()
+        end
+
+        Library.MascotURL = Url
+
+        local Mascot = Library:Create("ImageLabel", {
+            BackgroundTransparency = 1,
+            Size = Size,
+            Position = Position,
+            AnchorPoint = AnchorPoint,
+            Image = "",
+            ZIndex = 0, -- Set to 0 so it's behind the menu if overlapping, or adjust as needed
+            Parent = LibraryMainOuterFrame,
+            Name = "Mascot",
+            Visible = true -- It will be hidden by the window's transparency loop if toggled off
+        })
+
+        Library.MascotLabel = Mascot
+
+        task.spawn(function()
+            local AssetID = Url
+            if getcustomasset and writefile and isfile then
+                local Name = "spectre_mascot.png"
+                if not isfile(Name) then
+                    pcall(writefile, Name, game:HttpGet(Url))
+                end
+                AssetID = getcustomasset(Name)
+            end
+            Mascot.Image = AssetID
+        end)
+
+        return Mascot
     end
 end
 
