@@ -6537,9 +6537,9 @@ do
             Position = Position,
             AnchorPoint = AnchorPoint,
             Image = "",
-            ZIndex = 0,
+            ZIndex = 10,
             ScaleType = Info.ScaleType or Enum.ScaleType.Fit,
-            ResamplerMode = Info.ResamplerMode or Enum.ResamplerMode.Default,
+            ResampleMode = Info.ResamplerMode or Enum.ResamplerMode.Default,
             Parent = LibraryMainOuterFrame,
             Name = "Mascot",
             Visible = true
