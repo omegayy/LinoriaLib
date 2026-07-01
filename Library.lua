@@ -1835,20 +1835,6 @@ do
                     Key = SpecialKeysInput[Input.UserInputType]
                 elseif Input.UserInputType == Enum.UserInputType.Keyboard then
                     Key = Input.KeyCode == Enum.KeyCode.Escape and "None" or Input.KeyCode.Name
-                else
-                    -- Safely catch MB4, MB5, etc. without calling the Enum directly
-                    local success, inputName = pcall(function()
-                        return Input.UserInputType.Name
-                    end)
-                    if success and inputName and string.sub(inputName, 1, 11) == "MouseButton" then
-                        local num = string.match(inputName, "MouseButton(%d+)")
-                        if num then
-                            Key = "MB" .. num
-                            -- Save the actual object Roblox gave us!
-                            SpecialKeys[Key] = Input.UserInputType
-                            SpecialKeysInput[Input.UserInputType] = Key
-                        end
-                    end
                 end
 
                 ActiveModifiers = if Input.KeyCode == Enum.KeyCode.Escape or Key == "Unknown" then {} else ActiveModifiers
@@ -1894,20 +1880,6 @@ do
                         end
                     elseif SpecialKeysInput[Input.UserInputType] == Key then
                         HoldingKey = true
-                    else
-                        -- Safely check for MB4/MB5
-                        local success, inputName = pcall(function()
-                            return Input.UserInputType.Name
-                        end)
-                        if success and inputName and string.sub(inputName, 1, 11) == "MouseButton" then
-                            local num = string.match(inputName, "MouseButton(%d+)")
-                            if num and ("MB" .. num) == Key then
-                                HoldingKey = true
-                                -- Ensure the object is saved so Hold mode works
-                                SpecialKeys[Key] = Input.UserInputType
-                                SpecialKeysInput[Input.UserInputType] = Key
-                            end
-                        end
                     end
                 end
 
