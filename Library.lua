@@ -1200,17 +1200,13 @@ do
         local SpecialKeys = {
             ["MB1"] = Enum.UserInputType.MouseButton1,
             ["MB2"] = Enum.UserInputType.MouseButton2,
-            ["MB3"] = Enum.UserInputType.MouseButton3,
-            ["MB4"] = Enum.UserInputType.MouseButton4,
-            ["MB5"] = Enum.UserInputType.MouseButton5
+            ["MB3"] = Enum.UserInputType.MouseButton3
         }
 
         local SpecialKeysInput = {
             [Enum.UserInputType.MouseButton1] = "MB1",
             [Enum.UserInputType.MouseButton2] = "MB2",
-            [Enum.UserInputType.MouseButton3] = "MB3",
-            [Enum.UserInputType.MouseButton4] = "MB4",
-            [Enum.UserInputType.MouseButton5] = "MB5"
+            [Enum.UserInputType.MouseButton3] = "MB3"
         }
 
         -- Modifiers
