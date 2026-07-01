@@ -1209,15 +1209,6 @@ do
             [Enum.UserInputType.MouseButton3] = "MB3"
         }
 
-        -- Safely add MB4 and MB5 if the environment supports them
-        pcall(function()
-            SpecialKeys["MB4"] = Enum.UserInputType.MouseButton4
-            SpecialKeysInput[Enum.UserInputType.MouseButton4] = "MB4"
-            
-            SpecialKeys["MB5"] = Enum.UserInputType.MouseButton5
-            SpecialKeysInput[Enum.UserInputType.MouseButton5] = "MB5"
-        end)
-
         -- Modifiers
         local Modifiers = {
             ["LAlt"] = Enum.KeyCode.LeftAlt,
@@ -1284,12 +1275,11 @@ do
 
         local IsInputDown = function(Input)
             if not Input then 
-                return false 
+                return false
             end
 
             if SpecialKeysInput[Input.UserInputType] ~= nil then
-                local success, isPressed = pcall(function() return InputService:IsMouseButtonPressed(Input.UserInputType) end)
-                return success and isPressed and not InputService:GetFocusedTextBox()
+                return InputService:IsMouseButtonPressed(Input.UserInputType) and not InputService:GetFocusedTextBox()
             elseif Input.UserInputType == Enum.UserInputType.Keyboard then
                 return InputService:IsKeyDown(Input.KeyCode) and not InputService:GetFocusedTextBox()
             else
@@ -1665,30 +1655,11 @@ do
                 end
 
                 if SpecialKeys[Key] ~= nil then
-                    local InputToCheck = {
-                        UserInputType = SpecialKeys[Key],
-                        KeyCode = Enum.KeyCode.Unknown
-                    }
-                    return IsInputDown(InputToCheck)
+                    return InputService:IsMouseButtonPressed(SpecialKeys[Key]) and not InputService:GetFocusedTextBox()
                 else
-                    local KeyCode = Enum.KeyCode[Key]
-                    if KeyCode then
-                        return InputService:IsKeyDown(KeyCode) and not InputService:GetFocusedTextBox()
-                    else
-                        -- Dynamically check MB4/MB5
-                        local mbName = "MouseButton" .. string.match(Key, "MB(%d+)")
-                        local success, UserInputType = pcall(function() return Enum.UserInputType[mbName] end)
-                        if success and UserInputType then
-                            SpecialKeys[Key] = UserInputType
-                            local InputToCheck = {
-                                UserInputType = UserInputType,
-                                KeyCode = Enum.KeyCode.Unknown
-                            }
-                            return IsInputDown(InputToCheck)
-                        end
-                        return false
-                    end
+                    return InputService:IsKeyDown(Enum.KeyCode[Key]) and not InputService:GetFocusedTextBox()
                 end
+
             else
                 return KeyPicker.Toggled
             end
@@ -1696,28 +1667,26 @@ do
 
         function KeyPicker:SetValue(Data, SkipCallback)
             local Key, Mode, Modifiers = Data[1], Data[2], Data[3]
-            local UserInputType = nil
 
-            if Key == "None" or Key == nil then
+            local IsKeyValid, UserInputType = pcall(function()
+                if Key == "None" then
+                    Key = nil
+                    return nil
+                end
+                
+                if SpecialKeys[Key] == nil then 
+                    return Enum.KeyCode[Key]
+                end
+
+                return SpecialKeys[Key]
+            end)
+
+            if Key == nil then
                 KeyPicker.Value = "None"
-            elseif string.sub(Key, 1, 2) == "MB" then
-                -- Safely handle mouse buttons without calling the enum directly
+            elseif IsKeyValid then
                 KeyPicker.Value = Key
-                local mbName = "MouseButton" .. string.sub(Key, 3)
-                local success, inputType = pcall(function() return Enum.UserInputType[mbName] end)
-                if success and inputType then
-                    UserInputType = inputType
-                    SpecialKeys[Key] = inputType
-                    SpecialKeysInput[inputType] = Key
-                end
             else
-                -- Handle normal keyboard keys
-                local success, keyCode = pcall(function() return Enum.KeyCode[Key] end)
-                if success and keyCode then
-                    KeyPicker.Value = Key
-                else
-                    KeyPicker.Value = "Unknown"
-                end
+                KeyPicker.Value = "Unknown"
             end
 
             KeyPicker.Modifiers = VerifyModifiers(if typeof(Modifiers) == "table" then Modifiers else KeyPicker.Modifiers)
@@ -1866,13 +1835,19 @@ do
                     Key = SpecialKeysInput[Input.UserInputType]
                 elseif Input.UserInputType == Enum.UserInputType.Keyboard then
                     Key = Input.KeyCode == Enum.KeyCode.Escape and "None" or Input.KeyCode.Name
-                elseif string.find(Input.UserInputType.Name, "MouseButton") then
-                    -- Dynamically catch MB4, MB5, etc.
-                    local mbNum = string.match(Input.UserInputType.Name, "MouseButton(%d+)")
-                    if mbNum then
-                        Key = "MB" .. mbNum
-                        SpecialKeys[Key] = Input.UserInputType
-                        SpecialKeysInput[Input.UserInputType] = Key
+                else
+                    -- Safely catch MB4, MB5, etc. without calling the Enum directly
+                    local success, inputName = pcall(function()
+                        return Input.UserInputType.Name
+                    end)
+                    if success and inputName and string.sub(inputName, 1, 11) == "MouseButton" then
+                        local num = string.match(inputName, "MouseButton(%d+)")
+                        if num then
+                            Key = "MB" .. num
+                            -- Save the actual object Roblox gave us!
+                            SpecialKeys[Key] = Input.UserInputType
+                            SpecialKeysInput[Input.UserInputType] = Key
+                        end
                     end
                 end
 
@@ -1920,17 +1895,17 @@ do
                     elseif SpecialKeysInput[Input.UserInputType] == Key then
                         HoldingKey = true
                     else
-                        -- Fallback for executors missing MB4/MB5 enums
-                        local inputName = tostring(Input.UserInputType)
-                        if inputName:find("MouseButton") then
-                            local mbNum = inputName:match("MouseButton(%d+)")
-                            if mbNum then
-                                local mbKey = "MB" .. mbNum
-                                if mbKey == Key then
-                                    HoldingKey = true
-                                    SpecialKeys[mbKey] = Input.UserInputType
-                                    SpecialKeysInput[Input.UserInputType] = mbKey
-                                end
+                        -- Safely check for MB4/MB5
+                        local success, inputName = pcall(function()
+                            return Input.UserInputType.Name
+                        end)
+                        if success and inputName and string.sub(inputName, 1, 11) == "MouseButton" then
+                            local num = string.match(inputName, "MouseButton(%d+)")
+                            if num and ("MB" .. num) == Key then
+                                HoldingKey = true
+                                -- Ensure the object is saved so Hold mode works
+                                SpecialKeys[Key] = Input.UserInputType
+                                SpecialKeysInput[Input.UserInputType] = Key
                             end
                         end
                     end
