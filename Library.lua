@@ -1209,6 +1209,15 @@ do
             [Enum.UserInputType.MouseButton3] = "MB3"
         }
 
+        -- Safely add MB4 and MB5 if the environment supports them
+        pcall(function()
+            SpecialKeys["MB4"] = Enum.UserInputType.MouseButton4
+            SpecialKeysInput[Enum.UserInputType.MouseButton4] = "MB4"
+            
+            SpecialKeys["MB5"] = Enum.UserInputType.MouseButton5
+            SpecialKeysInput[Enum.UserInputType.MouseButton5] = "MB5"
+        end)
+
         -- Modifiers
         local Modifiers = {
             ["LAlt"] = Enum.KeyCode.LeftAlt,
@@ -1275,11 +1284,12 @@ do
 
         local IsInputDown = function(Input)
             if not Input then 
-                return false
+                return false 
             end
 
             if SpecialKeysInput[Input.UserInputType] ~= nil then
-                return InputService:IsMouseButtonPressed(Input.UserInputType) and not InputService:GetFocusedTextBox()
+                local success, isPressed = pcall(function() return InputService:IsMouseButtonPressed(Input.UserInputType) end)
+                return success and isPressed and not InputService:GetFocusedTextBox()
             elseif Input.UserInputType == Enum.UserInputType.Keyboard then
                 return InputService:IsKeyDown(Input.KeyCode) and not InputService:GetFocusedTextBox()
             else
@@ -1655,9 +1665,32 @@ do
                 end
 
                 if SpecialKeys[Key] ~= nil then
-                    return InputService:IsMouseButtonPressed(SpecialKeys[Key]) and not InputService:GetFocusedTextBox()
+                    local InputToCheck = {
+                        UserInputType = SpecialKeys[Key],
+                        KeyCode = Enum.KeyCode.Unknown
+                    }
+                    return IsInputDown(InputToCheck)
                 else
-                    return InputService:IsKeyDown(Enum.KeyCode[Key]) and not InputService:GetFocusedTextBox()
+                    local KeyCode = Enum.KeyCode[Key]
+                    if KeyCode then
+                        return InputService:IsKeyDown(KeyCode) and not InputService:GetFocusedTextBox()
+                    else
+                        -- Try to dynamically get UserInputType for keys like MB4
+                        local UserInputType = nil
+                        pcall(function() 
+                            local mbName = Key:gsub("MB", "MouseButton")
+                            UserInputType = Enum.UserInputType[mbName] 
+                        end)
+                        if UserInputType then
+                            SpecialKeys[Key] = UserInputType
+                            local InputToCheck = {
+                                UserInputType = UserInputType,
+                                KeyCode = Enum.KeyCode.Unknown
+                            }
+                            return IsInputDown(InputToCheck)
+                        end
+                        return false
+                    end
                 end
 
             else
@@ -1835,6 +1868,14 @@ do
                     Key = SpecialKeysInput[Input.UserInputType]
                 elseif Input.UserInputType == Enum.UserInputType.Keyboard then
                     Key = Input.KeyCode == Enum.KeyCode.Escape and "None" or Input.KeyCode.Name
+                elseif string.find(Input.UserInputType.Name, "MouseButton") then
+                    -- Dynamically catch MB4, MB5, etc.
+                    local mbNum = string.match(Input.UserInputType.Name, "MouseButton(%d+)")
+                    if mbNum then
+                        Key = "MB" .. mbNum
+                        SpecialKeys[Key] = Input.UserInputType
+                        SpecialKeysInput[Input.UserInputType] = Key
+                    end
                 end
 
                 ActiveModifiers = if Input.KeyCode == Enum.KeyCode.Escape or Key == "Unknown" then {} else ActiveModifiers
