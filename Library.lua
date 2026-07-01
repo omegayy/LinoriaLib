@@ -1675,13 +1675,10 @@ do
                     if KeyCode then
                         return InputService:IsKeyDown(KeyCode) and not InputService:GetFocusedTextBox()
                     else
-                        -- Try to dynamically get UserInputType for keys like MB4
-                        local UserInputType = nil
-                        pcall(function() 
-                            local mbName = Key:gsub("MB", "MouseButton")
-                            UserInputType = Enum.UserInputType[mbName] 
-                        end)
-                        if UserInputType then
+                        -- Dynamically check MB4/MB5
+                        local mbName = "MouseButton" .. string.match(Key, "MB(%d+)")
+                        local success, UserInputType = pcall(function() return Enum.UserInputType[mbName] end)
+                        if success and UserInputType then
                             SpecialKeys[Key] = UserInputType
                             local InputToCheck = {
                                 UserInputType = UserInputType,
@@ -1692,7 +1689,6 @@ do
                         return false
                     end
                 end
-
             else
                 return KeyPicker.Toggled
             end
@@ -1700,26 +1696,28 @@ do
 
         function KeyPicker:SetValue(Data, SkipCallback)
             local Key, Mode, Modifiers = Data[1], Data[2], Data[3]
+            local UserInputType = nil
 
-            local IsKeyValid, UserInputType = pcall(function()
-                if Key == "None" then
-                    Key = nil
-                    return nil
-                end
-                
-                if SpecialKeys[Key] == nil then 
-                    return Enum.KeyCode[Key]
-                end
-
-                return SpecialKeys[Key]
-            end)
-
-            if Key == nil then
+            if Key == "None" or Key == nil then
                 KeyPicker.Value = "None"
-            elseif IsKeyValid then
+            elseif string.sub(Key, 1, 2) == "MB" then
+                -- Safely handle mouse buttons without calling the enum directly
                 KeyPicker.Value = Key
+                local mbName = "MouseButton" .. string.sub(Key, 3)
+                local success, inputType = pcall(function() return Enum.UserInputType[mbName] end)
+                if success and inputType then
+                    UserInputType = inputType
+                    SpecialKeys[Key] = inputType
+                    SpecialKeysInput[inputType] = Key
+                end
             else
-                KeyPicker.Value = "Unknown"
+                -- Handle normal keyboard keys
+                local success, keyCode = pcall(function() return Enum.KeyCode[Key] end)
+                if success and keyCode then
+                    KeyPicker.Value = Key
+                else
+                    KeyPicker.Value = "Unknown"
+                end
             end
 
             KeyPicker.Modifiers = VerifyModifiers(if typeof(Modifiers) == "table" then Modifiers else KeyPicker.Modifiers)
@@ -1921,6 +1919,20 @@ do
                         end
                     elseif SpecialKeysInput[Input.UserInputType] == Key then
                         HoldingKey = true
+                    else
+                        -- Fallback for executors missing MB4/MB5 enums
+                        local inputName = tostring(Input.UserInputType)
+                        if inputName:find("MouseButton") then
+                            local mbNum = inputName:match("MouseButton(%d+)")
+                            if mbNum then
+                                local mbKey = "MB" .. mbNum
+                                if mbKey == Key then
+                                    HoldingKey = true
+                                    SpecialKeys[mbKey] = Input.UserInputType
+                                    SpecialKeysInput[Input.UserInputType] = mbKey
+                                end
+                            end
+                        end
                     end
                 end
 
