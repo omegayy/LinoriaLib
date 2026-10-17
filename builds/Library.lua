@@ -1884,11 +1884,75 @@ do
         end
 
         function KeyPicker:Display(Text)
-            DisplayLabel.Text = Text or KeyPicker.DisplayValue
+            if KeyPicker.Data.Modes == nil then
+                return
+            end
 
-            PickOuter.Size = UDim2.new(0, 999999, 0, 18)
-            RunService.RenderStepped:Wait()
-            PickOuter.Size = UDim2.new(0, math.max(28, DisplayLabel.TextBounds.X + 8), 0, 18)
+            UpdateMenuOuterPos()
+
+            local Count = 0
+            for _, Item in next, Scrolling:GetChildren() do
+                if not Item:IsA("UIListLayout") then
+                    Item:Destroy()
+                end
+            end
+
+            for Idx, Mode in next, KeyPicker.Data.Modes do
+                Count = Count + 1
+
+                local Button = Library:Create("TextButton", {
+                    BackgroundColor3 = Library.MainColor;
+                    BorderColor3 = Library.OutlineColor;
+                    BorderMode = Enum.BorderMode.Middle;
+                    Size = UDim2.new(1, -4, 0, 18);
+                    Position = UDim2.new(0, 2, 0, (Count * 18) - 18 + 2);
+                    ZIndex = 16;
+                    AutoButtonColor = false;
+                    Parent = Scrolling;
+                })
+
+                Library:AddToRegistry(Button, {
+                    BackgroundColor3 = "MainColor";
+                    BorderColor3 = "OutlineColor";
+                })
+
+                local Label = Library:CreateLabel({
+                    Size = UDim2.new(1, -4, 1, 0);
+                    Position = UDim2.new(0, 4, 0, 0);
+                    Text = Mode.Name;
+                    TextXAlignment = Enum.TextXAlignment.Left;
+                    TextSize = 14;
+                    ZIndex = 17;
+                    Parent = Button;
+                })
+
+                Library:OnHighlight(Button, Button,
+                    { BorderColor3 = "AccentColor" },
+                    { BorderColor3 = "OutlineColor" }
+                )
+
+                Button.MouseButton1Click:Connect(function()
+                    ModeSelectOuter.Visible = false
+                    Library.OpenedFrames[ModeSelectOuter] = nil
+
+                    KeyPicker.Data.CurrentMode = Mode.Mode
+                    KeyPicker.Data.Value = Mode.Value
+
+                    Library:SafeCallback(KeyPicker.Callback, KeyPicker.Data.Value, KeyPicker.Data.CurrentMode)
+                    Library:SafeCallback(KeyPicker.Changed, KeyPicker.Data.Value, KeyPicker.Data.CurrentMode)
+
+                    KeyPicker:SetValue(KeyPicker.Data)
+                end)
+            end
+
+            Scrolling.CanvasSize = UDim2.new(0, 0, 0, Count * 18)
+            ModeSelectOuter.Size = UDim2.new(0, 80, 0, Count * 18 + 4)
+
+            ModeSelectOuter.Visible = true
+            Library.OpenedFrames[ModeSelectOuter] = true
+            if type(Library.BringToFront) == "function" then
+                pcall(function() Library:BringToFront(ModeSelectOuter, 1000) end)
+            end
         end
 
         function KeyPicker:Update()
@@ -2069,6 +2133,9 @@ do
 
         function KeyPicker:SetModePickerVisibility(bool)
             ModeSelectOuter.Visible = bool
+            if bool and type(Library.BringToFront) == "function" then
+                pcall(function() Library:BringToFront(ModeSelectOuter, 1000) end)
+            end
         end
 
         function KeyPicker:GetModePickerVisibility()
@@ -2254,7 +2321,11 @@ do
         KeyPicker.Default = KeyPicker.Value
         KeyPicker.DefaultModifiers = table.clone(KeyPicker.Modifiers or {})
 
+        local Previous = Options[Idx]
         Options[Idx] = KeyPicker
+        if Previous and Previous ~= KeyPicker and type(Library.BindElements) == "function" then
+            pcall(function() Library:BindElements(Previous, KeyPicker) end)
+        end
 
         do
             local SearchTabName, SearchGroupboxName = Library:GetGroupboxSearchPath(ParentObj.Groupbox)
@@ -2753,6 +2824,12 @@ do
 
             PickerFrameOuter.Visible = true
             Library.OpenedFrames[PickerFrameOuter] = true
+            if type(Library.BringToFront) == "function" then
+                pcall(function() Library:BringToFront(PickerFrameOuter, 1000) end)
+            end
+            if type(Library.BringToFront) == "function" then
+                pcall(function() Library:BringToFront(PickerFrameOuter, 1000) end)
+            end
         end
 
         function ColorPicker:Hide()
@@ -2918,7 +2995,11 @@ do
 
         ColorPicker.Default = ColorPicker.Value
 
+        local Previous = Options[Idx]
         Options[Idx] = ColorPicker
+        if Previous and Previous ~= ColorPicker and type(Library.BindElements) == "function" then
+            pcall(function() Library:BindElements(Previous, ColorPicker) end)
+        end
 
         do
             local SearchTabName, SearchGroupboxName = Library:GetGroupboxSearchPath(ParentObj.Groupbox)
@@ -3351,6 +3432,14 @@ do
 
             local Y = math.clamp(Count * (20 * DPIScale), 0, MAX_DROPDOWN_ITEMS * (20 * DPIScale)) + 1
             RecalculateListSize(Y)
+
+            if ListOuter.Visible then
+                Library:BringToFront(ListOuter, 1000)
+            end
+
+            if ListOuter.Visible then
+                Library:BringToFront(ListOuter, 1000)
+            end
         end
 
         function Dropdown:SetValues(NewValues)
@@ -3593,6 +3682,11 @@ do
         Dropdown.Default = Defaults
         Dropdown.DefaultValues = Dropdown.Values
 
+        Options[Idx] = Dropdown
+        local Previous = Options[Idx]
+        if Previous and Previous ~= Dropdown and type(Library.BindElements) == "function" then
+            pcall(function() Library:BindElements(Previous, Dropdown) end)
+        end
         Options[Idx] = Dropdown
 
         return self
@@ -4366,6 +4460,11 @@ do
         Textbox.Default = Textbox.Value
 
         table.insert(Groupbox.Elements, Textbox)
+        Options[Idx] = Textbox
+        local Previous = Options[Idx]
+        if Previous and Previous ~= Textbox and type(Library.BindElements) == "function" then
+            pcall(function() Library:BindElements(Previous, Textbox) end)
+        end
         Options[Idx] = Textbox
 
         do
@@ -5417,6 +5516,14 @@ do
 
             local Y = math.clamp(Count * (20 * DPIScale), 0, MAX_DROPDOWN_ITEMS * (20 * DPIScale)) + 1
             RecalculateListSize(Y)
+
+            if ListOuter.Visible then
+                Library:BringToFront(ListOuter, 1000)
+            end
+
+            if ListOuter.Visible then
+                Library:BringToFront(ListOuter, 1000)
+            end
         end
 
         function Dropdown:SetValues(NewValues)
@@ -5661,6 +5768,11 @@ do
         Dropdown.DefaultValues = Dropdown.Values
 
         table.insert(Groupbox.Elements, Dropdown)
+        Options[Idx] = Dropdown
+        local Previous = Options[Idx]
+        if Previous and Previous ~= Dropdown and type(Library.BindElements) == "function" then
+            pcall(function() Library:BindElements(Previous, Dropdown) end)
+        end
         Options[Idx] = Dropdown
 
         do
