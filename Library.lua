@@ -9392,18 +9392,20 @@ end
                 local Panel = Library:CreatePopout({
                     Title = Info.Title or "Popout",
                     Size = Info.Size or UDim2.fromOffset(280, PanelHeight),
-                    Position = Info.Position or UDim2.fromScale(0.5, 0.5),
+                    Position = Info.Position or UDim2.new(0.5, 0, 0.5, 0),
                     Visible = true,
                     ShowWhenMenuClosed = true,
                     Resizable = true,
                 })
+
+                local Mirrored = 0
 
                 -- Re-create every element through the REAL library API inside
                 -- the panel (correct layout/theming), then bind original <->
                 -- mirror so both copies are live and fully interactive.
                 for _, Rec in next, Recorded do
                     local Args = {}
-                    for i = 1, Rec.Args.n do
+                    for i = 1, (Rec.Args.n or #Rec.Args) do
                         Args[i] = Rec.Args[i]
                     end
 
@@ -9423,13 +9425,21 @@ end
                         end
                     end
 
-                    local MethodFn = Panel[Rec.Method] or (Library.__BaseGroupboxFuncs and Library.__BaseGroupboxFuncs[Rec.Method])
+                    local MethodFn = (Panel and Panel[Rec.Method]) or (Library.__BaseGroupboxFuncs and Library.__BaseGroupboxFuncs[Rec.Method])
 
                     if type(MethodFn) ~= "function" then
                         continue
                     end
 
-                    local Mirror = MethodFn(Panel, table.unpack(Args, 1, #Args))
+                    local ok, Mirror = pcall(function()
+                        return MethodFn(Panel, table.unpack(Args, 1, #Args))
+                    end)
+
+                    if not ok or typeof(Mirror) ~= "table" then
+                        continue
+                    end
+
+                    Mirrored = Mirrored + 1
 
                     local Orig = nil
                     if type(OrigIdx) == "string" then
@@ -9440,8 +9450,23 @@ end
                         end
                     end
 
-                    if typeof(Orig) == "table" and typeof(Mirror) == "table" and Mirror ~= Orig then
-                        Library:BindElements(Orig, Mirror)
+                    if typeof(Orig) == "table" and Mirror ~= Orig then
+                        pcall(function()
+                            Library:BindElements(Orig, Mirror)
+                        end)
+                    end
+                end
+
+                -- Fallback: if nothing could be mirrored (recorder mismatch), clone
+                -- the visual children so the popout is never empty. Originals stay put.
+                if Mirrored == 0 then
+                    for _, Element in next, Groupbox.Container:GetChildren() do
+                        if not Element:IsA("UIListLayout") then
+                            pcall(function()
+                                local Copy = Element:Clone()
+                                Copy.Parent = Panel.Container
+                            end)
+                        end
                     end
                 end
 
