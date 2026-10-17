@@ -9392,7 +9392,7 @@ end
                 local Panel = Library:CreatePopout({
                     Title = Info.Title or "Popout",
                     Size = Info.Size or UDim2.fromOffset(280, PanelHeight),
-                    Position = Info.Position or UDim2.fromOffset(160, 160),
+                    Position = Info.Position or UDim2.fromScale(0.5, 0.5),
                     Visible = true,
                     ShowWhenMenuClosed = true,
                     Resizable = true,
@@ -9423,7 +9423,13 @@ end
                         end
                     end
 
-                    local Mirror = Panel[Rec.Method](Panel, table.unpack(Args, 1, #Args))
+                    local MethodFn = Panel[Rec.Method] or (Library.__BaseGroupboxFuncs and Library.__BaseGroupboxFuncs[Rec.Method])
+
+                    if type(MethodFn) ~= "function" then
+                        continue
+                    end
+
+                    local Mirror = MethodFn(Panel, table.unpack(Args, 1, #Args))
 
                     local Orig = nil
                     if type(OrigIdx) == "string" then
@@ -9441,8 +9447,15 @@ end
 
                 Groupbox.Controls = Panel
                 Groupbox._PopoutPanel = Panel
-                Groupbox:Resize()
-                Panel:Resize()
+
+                if type(Groupbox.Resize) == "function" then
+                    Groupbox:Resize()
+                end
+
+                if type(Panel.Resize) == "function" then
+                    Panel:Resize()
+                end
+
                 return Panel
             end
 
@@ -10072,10 +10085,12 @@ do
 
         if type(Original) == "function" then
             GBFuncs[MethodName] = function(Self, ...)
-                local Results = table.pack(Original(Self, ...))
+                local Results = { Original(Self, ...) }
 
                 if typeof(Self) == "table" then
-                    local Args = table.pack(...)
+                    local N = select("#", ...)
+                    local Args = { ... }
+                    Args.n = N
 
                     -- Skip recording the mirror elements themselves
                     local IsMirror = type(Args[1]) == "string" and string.sub(Args[1], -7) == "_popout"
@@ -10089,7 +10104,7 @@ do
                     end
                 end
 
-                return table.unpack(Results, 1, Results.n)
+                return table.unpack(Results, 1, #Results)
             end
         end
     end
