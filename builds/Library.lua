@@ -7662,6 +7662,7 @@ do
 
         if Saved then
             Popout:ApplyLayout(Saved)
+            pcall(function() Library:Notify("Restored layout: " .. tostring(Popout.Name), 2) end)
         end
 
         function Popout:SetVisible(Value)
