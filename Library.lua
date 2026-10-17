@@ -10829,6 +10829,7 @@ do
                         local Rec = {
                             Method = MethodName;
                             Args = Args;
+                            Returned = Results[1];
                         }
 
                         table.insert(Self.RecordedElements, Rec)
@@ -11096,6 +11097,31 @@ function Library:MirrorRecordIntoPanel(Panel, Rec)
 
     if not ok or typeof(Mirror) ~= "table" then
         return false
+    end
+
+    --// Dependency boxes/groupboxes are containers: mirror their recorded
+    --// children too, so sliders/labels inside them survive the pop-out \\--
+    if Rec.Method == "AddDependencyBox" or Rec.Method == "AddDependencyGroupbox" then
+        local ChildRecorded = (typeof(Rec.Returned) == "table" and Rec.Returned.RecordedElements) or {}
+        for _, ChildRec in next, ChildRecorded do
+            pcall(function()
+                Library:MirrorRecordIntoPanel(Mirror, ChildRec)
+            end)
+        end
+
+        --// Re-apply the dependency conditions so the mirrored box's children
+        --// show/hide in sync with the original's dropdown/toggle \\--
+        if typeof(Rec.Returned) == "table" and type(Rec.Returned.Dependencies) == "table" and #Rec.Returned.Dependencies > 0 then
+            pcall(function()
+                Mirror:SetupDependencies(Rec.Returned.Dependencies)
+            end)
+        end
+
+        pcall(function()
+            if type(Mirror.Resize) == "function" then
+                Mirror:Resize()
+            end
+        end)
     end
 
     local Orig = nil
