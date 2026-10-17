@@ -9476,6 +9476,21 @@ end
                     end)
                 end
 
+                -- The content is a ScrollingFrame; force its canvas to fit so the
+                -- cloned children aren't clipped out of view.
+                pcall(function()
+                    if typeof(Target) == "Instance" and Target:IsA("ScrollingFrame") then
+                        local Total = 0
+                        for _, Child in next, Target:GetChildren() do
+                            if not Child:IsA("UIListLayout") and not Child:IsA("UIGridLayout") then
+                                Total = Total + 26 + 4
+                            end
+                        end
+                        Target.CanvasSize = UDim2.fromOffset(0, math.max(Total + 16, 120))
+                        Target.ScrollingDirection = Enum.ScrollingDirection.Y
+                    end
+                end)
+
                 print("[Linoria Popout] Recorded="..#Recorded.." Mirrored="..Mirrored.." FallbackCloned="..(Target and "yes" or "no"))
 
                 Groupbox.Controls = Panel
