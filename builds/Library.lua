@@ -2780,6 +2780,12 @@ do
                 end
 
                 self.Container.Visible = true
+
+                if type(Library.BringToFront) == "function" then
+                    pcall(function()
+                        Library:BringToFront(self.Container, 1000)
+                    end)
+                end
             end
 
             function ContextMenu:Hide()
@@ -2820,7 +2826,7 @@ do
             end
 
             ContextMenu:AddOption("Copy color", function()
-                Library.ColorClipboard = ColorPicker.Value
+                Library.ColorClipboard = { Color = ColorPicker.Value, Transparency = ColorPicker.Transparency }
                 Library:Notify("Copied color!", 2)
             end)
 
@@ -2831,7 +2837,10 @@ do
                     return
                 end
 
-                ColorPicker:SetValueRGB(Library.ColorClipboard)
+                local Data = Library.ColorClipboard
+                local Color = typeof(Data) == "table" and Data.Color or Data
+                local Transparency = typeof(Data) == "table" and Data.Transparency or nil
+                ColorPicker:SetValueRGB(Color, Transparency)
             end)
 
             ContextMenu:AddOption("Copy HEX", function()
@@ -8940,6 +8949,10 @@ function Library:CreateWindow(...)
         local HttpService = game:GetService("HttpService")
         local TeleportService = game:GetService("TeleportService")
         local PlaceId = game.PlaceId
+        local BrowsePlaceId = PlaceId
+        local BrowseUsername = ""
+        local PlaceIdInput = nil
+        local UsernameInput = nil
 
         local Panel = Library:CreatePopout({
             Title = "Server Browser";
@@ -8977,7 +8990,84 @@ function Library:CreateWindow(...)
         local function JoinServer(JobId)
             Library:Notify("Joining server...", 2)
             pcall(function()
-                TeleportService:TeleportToPlaceInstance(PlaceId, JobId, LocalPlayer)
+                TeleportService:TeleportToPlaceInstance(BrowsePlaceId, JobId, LocalPlayer)
+            end)
+        end
+
+        local function JoinPlayer(Username, TargetPlaceId)
+            Username = type(Username) == "string" and Username or ""
+            Username = Username:gsub("^%s+", ""):gsub("%s+$", "")
+
+            if Username == "" then
+                Library:Notify("Enter a username.", 3)
+                return
+            end
+
+            TargetPlaceId = tonumber(TargetPlaceId) or BrowsePlaceId or game.PlaceId
+
+            Library:Notify("Resolving " .. Username .. "...", 2)
+
+            task.spawn(function()
+                local UserId = nil
+
+                -- resolve username -> userId (GET endpoint, no auth needed)
+                local Ok, Res = pcall(function()
+                    return game:HttpGet("https://api.roblox.com/users/get-by-username?username=" .. HttpService:UrlEncode(Username))
+                end)
+
+                if Ok and type(Res) == "string" then
+                    local DecodeOk, Data = pcall(function()
+                        return HttpService:JSONDecode(Res)
+                    end)
+
+                    if DecodeOk and type(Data) == "table" then
+                        UserId = Data.Id or Data.id
+                    end
+                end
+
+                if not UserId then
+                    Library:Notify("Could not find user: " .. Username, 4)
+                    return
+                end
+
+                Library:Notify("Looking for " .. Username .. " in servers...", 2)
+
+                -- fetch servers for the target place and find one containing the user
+                local ServersOk, ServersRes = pcall(function()
+                    return game:HttpGet("https://games.roblox.com/v1/games/" .. TargetPlaceId .. "/servers/Public?limit=100")
+                end)
+
+                if not ServersOk or type(ServersRes) ~= "string" then
+                    Library:Notify("Could not fetch server list.", 4)
+                    return
+                end
+
+                local DecodeOk, Data = pcall(function()
+                    return HttpService:JSONDecode(ServersRes)
+                end)
+
+                if not (DecodeOk and type(Data) == "table" and type(Data.data) == "table") then
+                    Library:Notify("Could not parse server list.", 4)
+                    return
+                end
+
+                for _, Server in next, Data.data do
+                    if type(Server) == "table" and Server.id then
+                        local Players = Server.players or {}
+
+                        for _, PId in next, Players do
+                            if PId == UserId then
+                                Library:Notify("Joining " .. Username .. "'s server...", 2)
+                                pcall(function()
+                                    TeleportService:TeleportToPlaceInstance(TargetPlaceId, Server.id, LocalPlayer)
+                                end)
+                                return
+                            end
+                        end
+                    end
+                end
+
+                Library:Notify(Username .. " not found in public servers (may be in a private server).", 4)
             end)
         end
 
@@ -8992,6 +9082,37 @@ function Library:CreateWindow(...)
                 end
             end
 
+            --// Subplace (e.g. Da Hood / Da Hood VC) + player join \\--
+            PlaceIdInput = Panel:AddInput("ServerBrowserPlaceId", {
+                Text = "Place ID (subplace)";
+                Default = tostring(BrowsePlaceId);
+                Numeric = true;
+                Finished = true;
+            })
+            PlaceIdInput:OnChanged(function(Value)
+                local n = tonumber(Value)
+                if n then BrowsePlaceId = n end
+            end)
+
+            UsernameInput = Panel:AddInput("ServerBrowserUsername", {
+                Text = "Username (join player)";
+                Default = BrowseUsername;
+                Finished = true;
+            })
+            UsernameInput:OnChanged(function(Value)
+                BrowseUsername = Value
+            end)
+
+            Panel:AddButton("Join Player", function()
+                JoinPlayer(BrowseUsername, BrowsePlaceId)
+            end)
+
+            Panel:AddButton("Refresh Server List", function()
+                RebuildList()
+                FetchServers()
+            end)
+
+            Panel:AddDivider()
             local SortDropdown = Panel:AddDropdown("ServerBrowserSort", {
                 Values = SortOptions;
                 Default = SortMode;
@@ -9007,12 +9128,6 @@ function Library:CreateWindow(...)
                 RebuildList()
             end)
 
-            Panel:AddButton("Refresh Server List", function()
-                RebuildList()
-                FetchServers()
-            end)
-
-            Panel:AddDivider()
 
             if #Servers == 0 then
                 Panel:AddLabel("No servers found.")
@@ -9037,7 +9152,7 @@ function Library:CreateWindow(...)
         FetchServers = function()
             task.spawn(function()
                 local Ok, Response = pcall(function()
-                    return game:HttpGet("https://games.roblox.com/v1/games/" .. PlaceId .. "/servers/Public?limit=100")
+                    return game:HttpGet("https://games.roblox.com/v1/games/" .. BrowsePlaceId .. "/servers/Public?limit=100")
                 end)
 
                 Servers = {}
