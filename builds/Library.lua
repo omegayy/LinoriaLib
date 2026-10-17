@@ -1707,71 +1707,6 @@ do
                 end
             )
 
-            --// Per-keybind visibility toggle (eye button) — hides/shows this row
-            --// in the keybind menu without re-running the script \\--
-            local HideIcon = Library:GetCustomIcon("eye-off") or Library:GetCustomIcon("eye")
-            local ShowIcon = Library:GetCustomIcon("eye")
-
-            local KeybindsToggleHide = Library:Create("TextButton", {
-                AnchorPoint = Vector2.new(1, 0);
-                AutoButtonColor = false;
-                BackgroundTransparency = 1;
-                Position = UDim2.new(1, -2, 0, 1);
-                Size = UDim2.new(0, 15, 0, 15);
-                Text = "";
-                ZIndex = 113;
-                Parent = KeybindsToggleContainer;
-            })
-
-            Library:OnHighlight(KeybindsToggleHide, KeybindsToggleHide,
-                { TextColor3 = "AccentColor" },
-                { TextColor3 = "FontColor" }
-            )
-
-            local function UpdateHideButton()
-                if HideIcon then
-                    KeybindsToggleHide.Text = ""
-
-                    local Icon = KeybindsToggleHide:FindFirstChildOfClass("ImageLabel")
-                    if not Icon then
-                        Icon = Library:Create("ImageLabel", {
-                            BackgroundTransparency = 1;
-                            Size = UDim2.new(0.7, 0, 0.7, 0);
-                            Position = UDim2.new(0.15, 0, 0.15, 0);
-                            ZIndex = 114;
-                            Parent = KeybindsToggleHide;
-                        })
-                    end
-
-                    Icon.Image = (KeyPicker.ShowInKeybinds == false) and ShowIcon.Url or HideIcon.Url
-                    Icon.ImageRectOffset = (KeyPicker.ShowInKeybinds == false) and ShowIcon.ImageRectOffset or HideIcon.ImageRectOffset
-                    Icon.ImageRectSize = (KeyPicker.ShowInKeybinds == false) and ShowIcon.ImageRectSize or HideIcon.ImageRectSize
-                    Icon.ImageColor3 = KeyPicker.ShowInKeybinds == false and Library.FontColor or Library.OutlineColor
-                else
-                    KeybindsToggleHide.Text = KeyPicker.ShowInKeybinds == false and "[-]" or "[+]"
-                    KeybindsToggleHide.Font = Library.Font
-                    KeybindsToggleHide.TextSize = 10
-                    KeybindsToggleHide.TextColor3 = KeyPicker.ShowInKeybinds == false and Library.FontColor or Library.OutlineColor
-                end
-            end
-
-            UpdateHideButton()
-
-            Library:GiveSignal(KeybindsToggleHide.InputBegan:Connect(function(Input)
-                if Library.Unloaded then
-                    return
-                end
-
-                if (Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame()) or Input.UserInputType == Enum.UserInputType.Touch then
-                    KeyPicker:SetShowInKeybinds(not (KeyPicker.ShowInKeybinds == false))
-                    UpdateHideButton()
-
-                    if type(Library.RefreshKeybindList) == "function" then
-                        Library:RefreshKeybindList()
-                    end
-                end
-            end))
-
             function KeybindsToggle:Display(State)
                 KeybindsToggleInner.BackgroundColor3 = State and Library.AccentColor or Library.MainColor
                 KeybindsToggleInner.BorderColor3 = State and Library.AccentColorDark or Library.OutlineColor
@@ -1947,6 +1882,78 @@ do
             UnbindLabel.InputBegan:Connect(function(Input)
                 if Input.UserInputType == Enum.UserInputType.MouseButton1 then
                     UnbindButton:UnbindKey()
+                end
+            end)
+        end
+
+        --// "Show in keybind UI" toggle (bool) — same right-click menu as the modes \\--
+        do
+            local ShowInner = Library:Create("Frame", {
+                BackgroundColor3 = Library.BackgroundColor;
+                BorderColor3 = Library.OutlineColor;
+                BorderMode = Enum.BorderMode.Inset;
+                Position = UDim2.new(0, 0, 0, ModeSelectInner.Size.Y.Offset + 21);
+                Size = UDim2.new(1, 0, 0, 18);
+                ZIndex = 15;
+                Parent = ModeSelectOuter;
+            })
+
+            ModeSelectOuter.Size = ModeSelectOuter.Size + UDim2.new(0, 0, 0, 18)
+
+            Library:AddToRegistry(ShowInner, {
+                BackgroundColor3 = "BackgroundColor";
+                BorderColor3 = "OutlineColor";
+            })
+
+            Library:CreateLabel({
+                Active = false;
+                Size = UDim2.new(1, -24, 0, 15);
+                Position = UDim2.new(0, 6, 0, 0);
+                TextSize = 13;
+                Text = "Show in keybind UI";
+                ZIndex = 16;
+                Parent = ShowInner;
+            })
+
+            local ShowBox = Library:Create("TextButton", {
+                AnchorPoint = Vector2.new(1, 0.5);
+                AutoButtonColor = false;
+                Position = UDim2.new(1, -5, 0.5, 0);
+                Size = UDim2.new(0, 14, 0, 14);
+                Text = "";
+                ZIndex = 17;
+                Parent = ShowInner;
+            })
+
+            local ShowBoxInner = Library:Create("Frame", {
+                BackgroundColor3 = Library.MainColor;
+                BorderColor3 = Library.OutlineColor;
+                BorderMode = Enum.BorderMode.Inset;
+                Size = UDim2.new(1, 0, 1, 0);
+                ZIndex = 18;
+                Parent = ShowBox;
+            })
+
+            local function UpdateShowBox()
+                local On = KeyPicker.ShowInKeybinds ~= false
+
+                ShowBoxInner.BackgroundColor3 = On and Library.AccentColor or Library.MainColor
+
+                if Library.RegistryMap[ShowBoxInner] then
+                    Library.RegistryMap[ShowBoxInner].Properties.BackgroundColor3 = On and "AccentColor" or "MainColor"
+                end
+            end
+
+            UpdateShowBox()
+
+            ShowBox.InputBegan:Connect(function(Input)
+                if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+                    KeyPicker:SetShowInKeybinds(not (KeyPicker.ShowInKeybinds ~= false))
+                    UpdateShowBox()
+
+                    if type(Library.RefreshKeybindList) == "function" then
+                        Library:RefreshKeybindList()
+                    end
                 end
             end)
         end
@@ -7525,6 +7532,17 @@ do
             return Popout
         end
 
+        --// Individual background transparency for this pop-out (0 = opaque, 1 = invisible)
+        function Popout:SetTransparency(Value)
+            Popout.Transparency = typeof(Value) == "number" and math.clamp(Value, 0, 1) or 0
+
+            if typeof(Inner) == "Instance" then
+                Inner.BackgroundTransparency = Popout.Transparency
+            end
+
+            return Popout
+        end
+
         Popout.Outer = Outer
         Popout.Inner = Inner
         Popout.Content = Content
@@ -8537,156 +8555,6 @@ function Library:CreateWindow(...)
 
     table.insert(Library.DragBlockers, ServerButton)
 
-    --// The executor's cross-domain request function (needed to reach
-    --// gamejoin.roblox.com and the GeoIP service). \\--
-    local function GetHttpRequestFunc()
-        return (syn and syn.request) or (http and http.request) or http_request or request or (fluxus and fluxus.request)
-    end
-
-    --// Roblox's public server list does not expose a region, so we resolve it
-    --// best-effort: gamejoin gives us the server's IP, then the unique IPs are
-    --// GeoIP'd in batches (ip-api allows up to 100 per request). Results are
-    --// cached per job id for the session so refreshes stay instant. \\--
-    function Library:ResolveServerRegions(Servers, OnProgress)
-        local HttpRequest = GetHttpRequestFunc()
-
-        if type(HttpRequest) ~= "function" then
-            return false, "This executor has no request/http_request function"
-        end
-
-        local HttpService = game:GetService("HttpService")
-        Library.ServerRegionCache = Library.ServerRegionCache or {}
-
-        local ToResolve = {}
-
-        for _, Server in next, Servers do
-            if Server._Region == nil then
-                if Library.ServerRegionCache[Server.id] then
-                    Server._Region = Library.ServerRegionCache[Server.id]
-                else
-                    table.insert(ToResolve, Server)
-                end
-            end
-        end
-
-        if #ToResolve == 0 then
-            if type(OnProgress) == "function" then
-                OnProgress()
-            end
-
-            return true
-        end
-
-        task.spawn(function()
-            -- small chunks so the list fills in progressively
-            for Start = 1, #ToResolve, 15 do
-                local Chunk = {}
-                local IPs = {}
-                local Order = {}
-
-                for i = Start, math.min(Start + 14, #ToResolve) do
-                    local Server = ToResolve[i]
-                    table.insert(Chunk, Server)
-
-                    local Ok, Response = pcall(HttpRequest, {
-                        Url = "https://gamejoin.roblox.com/v1/join-game-instance";
-                        Method = "POST";
-                        Headers = { ["Content-Type"] = "application/json" };
-                        Body = HttpService:JSONEncode({
-                            placeId = game.PlaceId;
-                            gameId = Server.id;
-                            gameJoinAttemptId = Server.id;
-                            isTeleport = false;
-                            isPlayTogetherGame = false;
-                        });
-                    })
-
-                    local Address
-
-                    if Ok and type(Response) == "table" and type(Response.Body) == "string" then
-                        local DecodeOk, Data = pcall(function()
-                            return HttpService:JSONDecode(Response.Body)
-                        end)
-
-                        if DecodeOk and type(Data) == "table" and type(Data.joinScript) == "table" then
-                            local Join = Data.joinScript
-                            Address = Join.MachineAddress
-
-                            if not Address and type(Join.UdmuxEndpoints) == "table" and Join.UdmuxEndpoints[1] then
-                                Address = Join.UdmuxEndpoints[1].Address
-                            end
-                        end
-                    end
-
-                    if Address then
-                        Server._IP = Address
-
-                        if not IPs[Address] then
-                            IPs[Address] = true
-                            table.insert(Order, Address)
-                        end
-                    else
-                        Server._Region = "Unknown"
-                    end
-                end
-
-                if #Order > 0 then
-                    local Ok, Response = pcall(HttpRequest, {
-                        Url = "http://ip-api.com/batch?fields=status,query,countryCode,city,regionName";
-                        Method = "POST";
-                        Headers = { ["Content-Type"] = "application/json" };
-                        Body = HttpService:JSONEncode(Order);
-                    })
-
-                    local Map = {}
-
-                    if Ok and type(Response) == "table" and type(Response.Body) == "string" then
-                        local DecodeOk, Data = pcall(function()
-                            return HttpService:JSONDecode(Response.Body)
-                        end)
-
-                        if DecodeOk and type(Data) == "table" then
-                            for _, Entry in next, Data do
-                                if type(Entry) == "table" and Entry.query then
-                                    local Region = Entry.city
-
-                                    if Region and Entry.countryCode and Entry.countryCode ~= "" then
-                                        Region = Region .. ", " .. Entry.countryCode
-                                    else
-                                        Region = Entry.regionName or Entry.countryCode
-                                    end
-
-                                    Map[Entry.query] = Region or "Unknown"
-                                end
-                            end
-                        end
-                    end
-
-                    for _, Server in next, Chunk do
-                        if Server._Region == nil then
-                            Server._Region = (Server._IP and Map[Server._IP]) or "Unknown"
-                            Library.ServerRegionCache[Server.id] = Server._Region
-                        end
-                    end
-                else
-                    for _, Server in next, Chunk do
-                        if Server._Region == nil then
-                            Server._Region = "Unknown"
-                        end
-                    end
-                end
-
-                if type(OnProgress) == "function" then
-                    OnProgress()
-                end
-
-                task.wait(0.2)
-            end
-        end)
-
-        return true
-    end
-
     --// Lists the public servers for this place and teleports to one on click. \\--
     function Library:OpenServerBrowser()
         if Library.Unloaded then
@@ -8716,8 +8584,7 @@ function Library:CreateWindow(...)
         local Servers = {}
         local SortMode = "Highest players"
         local FetchServers = nil
-        local Resolving = false
-        local SortOptions = { "Highest players", "Lowest players", "Most full", "Least full", "Region" }
+        local SortOptions = { "Highest players", "Lowest players", "Most full", "Least full" }
 
         local function SortServers()
             table.sort(Servers, function(a, b)
@@ -8730,15 +8597,6 @@ function Library:CreateWindow(...)
                     return FillA > FillB
                 elseif SortMode == "Least full" then
                     return FillA < FillB
-                elseif SortMode == "Region" then
-                    local RegionA = a._Region or "~"
-                    local RegionB = b._Region or "~"
-
-                    if RegionA == RegionB then
-                        return (a.playing or 0) > (b.playing or 0)
-                    end
-
-                    return RegionA < RegionB
                 end
 
                 return (a.playing or 0) > (b.playing or 0)
@@ -8783,26 +8641,6 @@ function Library:CreateWindow(...)
                 FetchServers()
             end)
 
-            Panel:AddButton("Resolve Regions", function()
-                if Resolving then
-                    return
-                end
-
-                Resolving = true
-                Library:Notify("Resolving server regions...", 3)
-
-                local Ok, Err = Library:ResolveServerRegions(Servers, function()
-                    Resolving = false
-                    SortServers()
-                    RebuildList()
-                end)
-
-                if not Ok then
-                    Resolving = false
-                    Library:Notify(Err or "Region lookup unavailable.", 4)
-                end
-            end)
-
             Panel:AddDivider()
 
             if #Servers == 0 then
@@ -8813,7 +8651,7 @@ function Library:CreateWindow(...)
                 local JobId = Server.id
 
                 Panel:AddButton({
-                    Text = string.format("[%s] %d/%d players - Join", Server._Region or "...", Server.playing or 0, Server.maxPlayers or 0);
+                    Text = string.format("%d/%d players - Join", Server.playing or 0, Server.maxPlayers or 0);
                     Func = function()
                         JoinServer(JobId)
                     end,
@@ -8854,17 +8692,6 @@ function Library:CreateWindow(...)
                 if #Servers == 0 then
                     Library:Notify("Could not fetch server list (API may require auth).", 4)
                     return
-                end
-
-                -- resolve regions automatically (uses the session cache when possible)
-                if not Resolving then
-                    Resolving = true
-
-                    Library:ResolveServerRegions(Servers, function()
-                        Resolving = false
-                        SortServers()
-                        RebuildList()
-                    end)
                 end
             end)
         end
@@ -8952,6 +8779,20 @@ function Library:CreateWindow(...)
             end)
             Library.ToggleKeybind = Options.MenuKeybind
         end
+
+        Panel:AddDivider()
+
+        --// Individual pop-out transparency (this wheel's own background) \\--
+        Panel:AddSlider("Options_PopoutTransparency", {
+            Text = "Popout Transparency";
+            Default = math.floor((Library.PopoutTransparency or 0) * 100 + 0.5);
+            Min = 0; Max = 100; Rounding = 0; Suffix = "%";
+        }):OnChanged(function(Value)
+            Library.PopoutTransparency = Value / 100
+            pcall(function()
+                Panel.Inner.BackgroundTransparency = Library.PopoutTransparency
+            end)
+        end)
 
         Panel:AddDivider()
 

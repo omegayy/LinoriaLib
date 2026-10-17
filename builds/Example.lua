@@ -603,6 +603,18 @@ end)
 
 Options.KeyPicker:SetValue({ "MB2", "Hold" }) -- Sets keybind to MB2, mode to Hold
 
+-- You can also hide a keybind from the keybind menu while keeping it usable.
+-- Pass ShowInKeybinds = false, or right-click the keybind and toggle
+-- "Show in keybind UI" at runtime.
+LeftGroupBox:AddLabel("Hidden Keybind"):AddKeyPicker("HiddenKey", {
+	Default = "P",
+	ShowInKeybinds = false,
+	Text = "Hidden keybind",
+	Callback = function(Value)
+		print("[cb] Hidden keybind clicked!", Value)
+	end,
+})
+
 -- Label:KeyPicker (Press Mode)
 
 local KeybindNumber = 0
@@ -928,6 +940,16 @@ PlayerPanel:LinkToggle(Toggles.PanelPlayer)
 
 PanelsBox:AddDivider()
 PanelsBox:AddLabel("Each panel has a gear button (top-right) with options like 'keep open when menu is closed', lock position and keybind.", true)
+
+-- Individual pop-out transparency: each panel remembers its own background
+-- transparency. The settings wheel also has a slider for its own panel.
+PanelsBox:AddSlider("PanelTransparency", {
+	Text = "Stats panel transparency",
+	Default = 0, Min = 0, Max = 100, Rounding = 0, Suffix = "%",
+})
+Options.PanelTransparency:OnChanged(function(Value)
+	StatsPanel:SetTransparency(Value / 100)
+end)
 
 -- Live stats for the Stats panel
 task.spawn(function()
