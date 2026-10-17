@@ -1071,9 +1071,51 @@ function Library:GetSearchEntryPopout(Entry)
     return nil
 end
 
+function Library:RevealSearchEntry(Entry)
+    local Holder = Entry.Holder
+    if not (typeof(Holder) == "Instance" and Holder.Parent) then
+        return
+    end
+
+    -- Build lookups so we can reveal any Dependency Box / Dependency Groupbox
+    -- that is currently hiding the target element (e.g. gated behind a toggle/dropdown).
+    local DepBoxLookup = {}
+    for _, Depbox in next, Library.DependencyBoxes do
+        if Depbox.Holder then
+            DepBoxLookup[Depbox.Holder] = Depbox
+        end
+    end
+
+    local DepGroupboxLookup = {}
+    for _, DepGroupbox in next, Library.DependencyGroupboxes do
+        if DepGroupbox.BoxOuter then
+            DepGroupboxLookup[DepGroupbox.BoxOuter] = DepGroupbox
+        end
+    end
+
+    local Node = Holder
+    while Node do
+        local Depbox = DepBoxLookup[Node]
+        if Depbox and not Depbox.Holder.Visible then
+            Depbox.Holder.Visible = true
+        end
+
+        local DepGroupbox = DepGroupboxLookup[Node]
+        if DepGroupbox and not DepGroupbox.BoxOuter.Visible then
+            DepGroupbox.BoxOuter.Visible = true
+        end
+
+        Node = Node.Parent
+    end
+end
+
 function Library:NavigateToSearchEntry(Entry)
     if typeof(Entry) ~= "table" then
         return
+    end
+
+    if typeof(Entry.Callback) == "function" then
+        Library:SafeCallback(Entry.Callback, Entry)
     end
 
     local Popout = Library:GetSearchEntryPopout(Entry)
@@ -1091,16 +1133,25 @@ function Library:NavigateToSearchEntry(Entry)
         return
     end
 
-    local Side = Library:GetSearchEntrySideFrame(Entry)
-
-    if Side then
-        local RelativeY = (Holder.AbsolutePosition.Y - Side.AbsolutePosition.Y) + Side.CanvasPosition.Y - (20 * DPIScale)
-        TweenService:Create(Side, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            CanvasPosition = Vector2.new(0, math.max(RelativeY, 0)),
-        }):Play()
-    end
+    Library:RevealSearchEntry(Entry)
 
     task.spawn(function()
+        -- Let the layout settle a frame so a freshly-revealed element has a real position/size.
+        RunService.RenderStepped:Wait()
+
+        if not (typeof(Holder) == "Instance" and Holder.Parent) then
+            return
+        end
+
+        local Side = Library:GetSearchEntrySideFrame(Entry)
+
+        if Side then
+            local RelativeY = (Holder.AbsolutePosition.Y - Side.AbsolutePosition.Y) + Side.CanvasPosition.Y - (20 * DPIScale)
+            TweenService:Create(Side, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                CanvasPosition = Vector2.new(0, math.max(RelativeY, 0)),
+            }):Play()
+        end
+
         local Flash = Library:Create("Frame", {
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
@@ -6304,6 +6355,7 @@ do
         end
 
         Depbox.Container = Frame
+        Depbox.Holder = Holder
 
         setmetatable(Depbox, BaseGroupbox)
 
@@ -6417,6 +6469,7 @@ do
         end
 
         DepGroupbox.Container = Container
+        DepGroupbox.BoxOuter = BoxOuter
         setmetatable(DepGroupbox, BaseGroupbox)
 
         DepGroupbox:Resize()
@@ -7810,9 +7863,18 @@ function Library:CreateWindow(...)
         Library.OpenedFrames[SearchResultsOuter] = nil
     end
 
+    local SearchResultsWidth = 240
+
     local function UpdateSearchResultsPosition()
+        local ScreenWidth = workspace.CurrentCamera.ViewportSize.X
+
+        -- Anchor the dropdown to the right edge of the search bar (it lives in the
+        -- top-right corner) and keep it clamped on-screen instead of overflowing right.
+        local AnchorRight = Library.SearchBar.AbsolutePosition.X + Library.SearchBar.AbsoluteSize.X
+        local X = math.clamp(AnchorRight - SearchResultsWidth, 4, math.max(4, ScreenWidth - SearchResultsWidth - 4))
+
         SearchResultsOuter.Position = UDim2.fromOffset(
-            math.floor(SearchBox.AbsolutePosition.X),
+            math.floor(X),
             math.floor(SearchBox.AbsolutePosition.Y + SearchBox.AbsoluteSize.Y + 1)
         )
     end
@@ -7827,7 +7889,20 @@ function Library:CreateWindow(...)
 
         local MaxItems = 8
         local RowHeight = 20
+        local ScaledRowHeight = RowHeight * DPIScale
         local Count = math.min(#Entries, MaxItems)
+
+        -- Size the dropdown to fit its content (clamped) so text isn't clipped.
+        local MaxTextWidth = 0
+        for Index = 1, Count do
+            local Entry = Entries[Index]
+            local Path = string.format("%s \u{203A} %s", Entry.TabName or "Misc", Entry.GroupboxName or "General")
+            local PlainText = string.format("%s  (%s \u{00B7} %s)", Entry.Text, Entry.Type or "Element", Path)
+
+            MaxTextWidth = math.max(MaxTextWidth, select(1, Library:GetTextBounds(PlainText, Library.Font, 14 * DPIScale)))
+        end
+
+        SearchResultsWidth = math.clamp(MaxTextWidth + 16 * DPIScale, Library.SearchBar.AbsoluteSize.X, 420 * DPIScale)
 
         for Index = 1, Count do
             local Entry = Entries[Index]
@@ -7856,6 +7931,7 @@ function Library:CreateWindow(...)
                 TextSize = 14;
                 Text = string.format("%s  <font color=\"#8e8e8e\">(%s \u{00B7} %s)</font>", Entry.Text, Entry.Type or "Element", Path);
                 TextXAlignment = Enum.TextXAlignment.Left;
+                TextTruncate = Enum.TextTruncate.AtEnd;
                 RichText = true;
                 ZIndex = 604;
                 Parent = Row;
@@ -7875,8 +7951,8 @@ function Library:CreateWindow(...)
             table.insert(SearchResultRows, Row)
         end
 
-        SearchResultsScroll.CanvasSize = UDim2.fromOffset(0, Count * RowHeight)
-        SearchResultsOuter.Size = UDim2.fromOffset(math.max(SearchBox.AbsoluteSize.X, 240), Count * RowHeight + 4)
+        SearchResultsScroll.CanvasSize = UDim2.fromOffset(0, Count * ScaledRowHeight)
+        SearchResultsOuter.Size = UDim2.fromOffset(SearchResultsWidth, Count * ScaledRowHeight + 4 * DPIScale)
         UpdateSearchResultsPosition()
         SearchResultsOuter.Visible = true
         Library.OpenedFrames[SearchResultsOuter] = true
