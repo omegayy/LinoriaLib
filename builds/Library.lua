@@ -6845,6 +6845,7 @@ do
     function Library:LoadPopouts()
         local Contents = TryReadFile()
         if not Contents then
+            print("[Popout] LoadPopouts: no file found")
             return
         end
 
@@ -6854,6 +6855,9 @@ do
 
         if Success and typeof(Data) == "table" then
             Library.PopoutLayout = Data
+            print("[Popout] LoadPopouts: loaded " .. tostring(#Data) .. " layouts")
+        else
+            print("[Popout] LoadPopouts: failed to decode")
         end
     end
 
@@ -6887,6 +6891,7 @@ do
 
     function Library:ApplyPopoutLayouts()
         if typeof(Library.PopoutLayout) ~= "table" then
+            print("[Popout] No PopoutLayout to apply")
             return
         end
 
@@ -6902,7 +6907,11 @@ do
 
                 if Ok then
                     Count = Count + 1
+                else
+                    print("[Popout] ApplyLayout failed for: " .. tostring(Popout.Name))
                 end
+            else
+                print("[Popout] No saved layout for: " .. tostring(Popout.Name))
             end
         end
 
@@ -7616,6 +7625,7 @@ do
         end
 
         function Popout:Save()
+            print("[Popout] Save called for: " .. tostring(Popout.Name))
             Library:SavePopouts()
         end
 
