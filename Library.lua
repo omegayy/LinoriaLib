@@ -7324,6 +7324,9 @@ do
                 Visible = Popout.Visible;
                 ShowWhenMenuClosed = Popout.ShowWhenMenuClosed;
                 Keybind = Popout.Keybind;
+                Transparency = Popout.Transparency;
+                Resizable = Popout.Resizable;
+                Locked = Popout.Locked;
             }
         end
 
@@ -7387,6 +7390,18 @@ do
             if typeof(Saved.Keybind) == "string" then
                 Popout.Keybind = Saved.Keybind
                 KeybindLabel.Text = "Keybind: " .. Popout.Keybind
+            end
+
+            if typeof(Saved.Transparency) == "number" then
+                Popout:SetTransparency(Saved.Transparency)
+            end
+
+            if typeof(Saved.Resizable) == "boolean" then
+                Popout.Resizable = Saved.Resizable
+            end
+
+            if typeof(Saved.Locked) == "boolean" then
+                Popout.Locked = Saved.Locked
             end
         end
 
