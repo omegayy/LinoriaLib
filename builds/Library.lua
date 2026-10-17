@@ -7655,6 +7655,7 @@ do
 
     Library.KeybindFrame = KeybindOuter
     Library.KeybindContainer = KeybindContainer
+    Library.KeybindInner = KeybindInner
     Library:MakeDraggable(KeybindOuter)
 
     --// Keybind filters popup (opened with the little settings wheel) \\--
@@ -8799,6 +8800,25 @@ function Library:CreateWindow(...)
             Library.PopoutTransparency = Value / 100
             pcall(function()
                 Panel:SetTransparency(Library.PopoutTransparency)
+            end)
+        end)
+
+        Panel:AddDivider()
+
+        --// Keybind menu transparency \\--
+        Panel:AddSlider("Options_KeybindTransparency", {
+            Text = "Keybind Menu Transparency";
+            Default = math.floor((Library.KeybindTransparency or 0) * 100 + 0.5);
+            Min = 0; Max = 100; Rounding = 0; Suffix = "%";
+        }):OnChanged(function(Value)
+            Library.KeybindTransparency = Value / 100
+            pcall(function()
+                if Library.KeybindFrame then
+                    Library.KeybindFrame.BackgroundTransparency = Library.KeybindTransparency
+                end
+                if Library.KeybindInner then
+                    Library.KeybindInner.BackgroundTransparency = Library.KeybindTransparency
+                end
             end)
         end)
 
