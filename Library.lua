@@ -7590,16 +7590,29 @@ do
         function Popout:SetTransparency(Value)
             Popout.Transparency = typeof(Value) == "number" and math.clamp(Value, 0, 1) or 0
 
+            local function Apply(Inst)
+                if not Inst:IsA("GuiObject") then
+                    return
+                end
+
+                -- Store the original background transparency once, so we can
+                -- restore it (and never push a fully-transparent element above
+                -- its intended value) when the transparency changes.
+                local Original = Inst:GetAttribute("OrigBgTrans")
+                if Original == nil then
+                    Original = Inst.BackgroundTransparency
+                    Inst:SetAttribute("OrigBgTrans", Original)
+                end
+
+                Inst.BackgroundTransparency = math.max(Original, Popout.Transparency)
+            end
+
             if typeof(Outer) == "Instance" then
-                Outer.BackgroundTransparency = Popout.Transparency
-            end
+                Apply(Outer)
 
-            if typeof(Inner) == "Instance" then
-                Inner.BackgroundTransparency = Popout.Transparency
-            end
-
-            if typeof(TitleBar) == "Instance" then
-                TitleBar.BackgroundTransparency = Popout.Transparency
+                for _, Desc in next, Outer:GetDescendants() do
+                    Apply(Desc)
+                end
             end
 
             return Popout
