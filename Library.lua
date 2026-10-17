@@ -3581,6 +3581,10 @@ local BaseGroupbox = {}
 do
     local BaseGroupboxFuncs = {}
 
+    -- Hoisted so file-tail code (the pop-out mirror recorder) can wrap these
+    -- methods after this do-block has closed.
+    Library.__BaseGroupboxFuncs = BaseGroupboxFuncs
+
     function BaseGroupboxFuncs:AddBlank(Size, Visible)
         local Groupbox = self
         local Container = Groupbox.Container
@@ -10061,11 +10065,13 @@ do
         "AddImage", "AddVideo", "AddViewport", "AddUIPassthrough",
     }
 
+    local GBFuncs = Library.__BaseGroupboxFuncs
+
     for _, MethodName in next, RecordedMethods do
-        local Original = BaseGroupboxFuncs[MethodName]
+        local Original = GBFuncs and GBFuncs[MethodName]
 
         if type(Original) == "function" then
-            BaseGroupboxFuncs[MethodName] = function(Self, ...)
+            GBFuncs[MethodName] = function(Self, ...)
                 local Results = table.pack(Original(Self, ...))
 
                 if typeof(Self) == "table" then
