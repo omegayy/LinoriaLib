@@ -7655,6 +7655,19 @@ do
 
         if Saved then
             Popout:ApplyLayout(Saved)
+            pcall(function()
+                Library:Notify("Restored layout for: " .. tostring(Popout.Name), 2)
+            end)
+        else
+            pcall(function()
+                local Keys = {}
+                if typeof(Library.PopoutLayout) == "table" then
+                    for K, _ in next, Library.PopoutLayout do
+                        Keys[#Keys + 1] = tostring(K)
+                    end
+                end
+                Library:Notify("No saved layout for: " .. tostring(Popout.Name) .. " (have: " .. table.concat(Keys, ", ") .. ")", 4)
+            end)
         end
 
         function Popout:SetVisible(Value)
