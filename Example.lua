@@ -34,7 +34,7 @@ local repo = "https://raw.githubusercontent.com/omegayy/LinoriaLib/main/"
 local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
 local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
 local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
-local ESP = loadstring(game:HttpGet(repo .. "ESP.lua"))()
+local ESP = loadstring(game:HttpGet(repo .. "ESP.lua?v=" .. tostring(tick())))()
 
 
 local Options = Library.Options
