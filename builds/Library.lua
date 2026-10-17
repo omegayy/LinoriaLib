@@ -2087,8 +2087,9 @@ do
                 KeyPicker.Value = "Unknown"
             end
 
-            KeyPicker.Modifiers = VerifyModifiers(if typeof(Modifiers) == "table" then Modifiers else KeyPicker.Modifiers)
-            KeyPicker.DisplayValue = if GetTableSize(KeyPicker.Modifiers) > 0 then (table.concat(KeyPicker.Modifiers, " + ") .. " + " .. KeyPicker.Value) else KeyPicker.Value
+            KeyPicker.Modifiers = VerifyModifiers(if typeof(Modifiers) == "table" then Modifiers else (KeyPicker.Modifiers or {}))
+            local modCount = GetTableSize(KeyPicker.Modifiers)
+            KeyPicker.DisplayValue = if modCount > 0 then (table.concat(KeyPicker.Modifiers, " + ") .. " + " .. tostring(KeyPicker.Value)) else tostring(KeyPicker.Value)
 
             DisplayLabel.Text = KeyPicker.DisplayValue
 
