@@ -7106,7 +7106,7 @@ do
         local SettingsOuter = Library:Create("Frame", {
             AnchorPoint = Vector2.new(1, 0);
             Position = UDim2.new(1, -3, 0, 22);
-            Size = UDim2.fromOffset(190, 108);
+            Size = UDim2.fromOffset(190, 126);
             BackgroundColor3 = Color3.new(0, 0, 0);
             BorderColor3 = Color3.new(0, 0, 0);
             Visible = false;
@@ -7245,6 +7245,41 @@ do
         end)
 
         KeybindLabel.Text = "Keybind: " .. (Popout.Keybind or "None")
+
+        --// Per-popout transparency cycle (0% -> 25% -> 50% -> 75% -> 0%) \\--
+        do
+            local TransparencyRow = Library:Create("TextButton", {
+                AutoButtonColor = false;
+                BackgroundColor3 = Library.MainColor;
+                BorderColor3 = Library.OutlineColor;
+                BorderMode = Enum.BorderMode.Middle;
+                LayoutOrder = NextOrder();
+                Size = UDim2.new(1, 0, 0, 18);
+                Font = Library.Font;
+                Text = "Transparency: 0%";
+                TextColor3 = Library.FontColor;
+                TextSize = 13;
+                ZIndex = 212;
+                Parent = SettingsInner;
+            })
+
+            Library:ApplyTextStroke(TransparencyRow)
+            Library:AddToRegistry(TransparencyRow, {
+                BackgroundColor3 = "MainColor";
+                BorderColor3 = "OutlineColor";
+                TextColor3 = "FontColor";
+            })
+
+            local Levels = { 0, 0.25, 0.5, 0.75 }
+            local LevelIdx = 1
+
+            TransparencyRow.MouseButton1Click:Connect(function()
+                LevelIdx = (LevelIdx % #Levels) + 1
+                local Value = Levels[LevelIdx]
+                Popout:SetTransparency(Value)
+                TransparencyRow.Text = string.format("Transparency: %d%%", math.floor(Value * 100 + 0.5))
+            end)
+        end
 
         do
             local ResetRow = Library:Create("TextButton", {
