@@ -443,7 +443,12 @@ function ESP:Destroy()
 end
 
 function ESP:Preview(Parent)
-	if not Parent then return end
+	if not Parent then
+		Parent = Instance.new("Frame")
+		Parent.Name = "ESPPreviewContainer"
+		Parent.BackgroundTransparency = 1
+		Parent.Size = UDim2.fromScale(1, 1)
+	end
 
 	local Cam = Instance.new("Camera")
 	Cam.FieldOfView = 40
