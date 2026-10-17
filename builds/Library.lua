@@ -9511,6 +9511,20 @@ end
                     end
                 end)
 
+                -- ZIndexBehavior is GLOBAL, and the popout frames sit at ZIndex 200+.
+                -- Mirrored/cloned elements keep their original low ZIndex (~5), so they
+                -- render BEHIND the popout's opaque background. Raise them above it.
+                pcall(function()
+                    local Content = Panel.Container or Panel.Content
+                    if typeof(Content) == "Instance" then
+                        for _, Desc in next, Content:GetDescendants() do
+                            if Desc:IsA("GuiObject") then
+                                Desc.ZIndex = (Desc.ZIndex or 1) + 300
+                            end
+                        end
+                    end
+                end)
+
                 print("[Linoria Popout] Recorded="..#Recorded.." Mirrored="..Mirrored)
 
                 Groupbox.Controls = Panel
