@@ -1887,7 +1887,7 @@ do
         end
 
         function KeyPicker:Display(Text)
-            if KeyPicker.Data.Modes == nil then
+            if KeyPicker.Data and KeyPicker.Data.Modes == nil then
                 return
             end
 
