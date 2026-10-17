@@ -1708,6 +1708,61 @@ do
                 end
             )
 
+            --// Per-row hide toggle: hides this keybind from the keybind menu \\--
+            local RowHideButton = Library:Create("TextButton", {
+                AnchorPoint = Vector2.new(1, 0.5);
+                AutoButtonColor = false;
+                BackgroundTransparency = 1;
+                Position = UDim2.new(1, -2, 0.5, 0);
+                Size = UDim2.new(0, 14, 0, 14);
+                Text = "";
+                ZIndex = 113;
+                Parent = KeybindsToggleContainer;
+            })
+
+            Library:OnHighlight(RowHideButton, RowHideButton,
+                { TextColor3 = "AccentColor" },
+                { TextColor3 = "FontColor" }
+            )
+
+            local function UpdateRowHideButton()
+                if KeyPicker.ShowInKeybinds == false then
+                    RowHideButton.Text = "[-]"
+                else
+                    RowHideButton.Text = "[+]"
+                end
+                RowHideButton.Font = Library.Font
+                RowHideButton.TextSize = 9
+                RowHideButton.TextColor3 = KeyPicker.ShowInKeybinds == false and Library.FontColor or Library.OutlineColor
+            end
+
+            UpdateRowHideButton()
+
+            KeyPicker.KeybindHideButton = RowHideButton
+            KeyPicker.UpdateHideButton = UpdateRowHideButton
+
+            Library:GiveSignal(RowHideButton.InputBegan:Connect(function(Input)
+                if Library.Unloaded then
+                    return
+                end
+
+                if (Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame()) or Input.UserInputType == Enum.UserInputType.Touch then
+                    KeyPicker:SetShowInKeybinds(not (KeyPicker.ShowInKeybinds == false))
+                    UpdateRowHideButton()
+
+            KeyPicker.KeybindHideButton = RowHideButton
+            KeyPicker.UpdateHideButton = UpdateRowHideButton
+
+                    if type(Library.RefreshKeybindList) == "function" then
+                        Library:RefreshKeybindList()
+                    end
+
+                    if type(Library.SaveKeybindFilters) == "function" then
+                        Library:SaveKeybindFilters()
+                    end
+                end
+            end))
+
             function KeybindsToggle:Display(State)
                 KeybindsToggleInner.BackgroundColor3 = State and Library.AccentColor or Library.MainColor
                 KeybindsToggleInner.BorderColor3 = State and Library.AccentColorDark or Library.OutlineColor
@@ -8953,6 +9008,9 @@ function Library:CreateWindow(...)
         local BrowseUsername = ""
         local PlaceIdInput = nil
         local UsernameInput = nil
+        local Subplaces = {}
+        local SubplaceNames = {}
+        local SubplaceDropdown = nil
 
         local Panel = Library:CreatePopout({
             Title = "Server Browser";
@@ -9071,6 +9129,82 @@ function Library:CreateWindow(...)
             end)
         end
 
+        local function FetchSubplaces()
+            task.spawn(function()
+                -- resolve universe id from the current place
+                local UniverseId = nil
+                local Ok, Res = pcall(function()
+                    return game:HttpGet("https://apis.roblox.com/universes/v1/places/" .. BrowsePlaceId .. "/universe")
+                end)
+
+                if Ok and type(Res) == "string" then
+                    local DecodeOk, Data = pcall(function()
+                        return HttpService:JSONDecode(Res)
+                    end)
+
+                    if DecodeOk and type(Data) == "table" then
+                        UniverseId = Data.universeId
+                    end
+                end
+
+                if not UniverseId then
+                    -- fallback: try multiget-place-details
+                    local Ok2, Res2 = pcall(function()
+                        return game:HttpGet("https://games.roblox.com/v1/games/multiget-place-details?placeIds=" .. BrowsePlaceId)
+                    end)
+
+                    if Ok2 and type(Res2) == "string" then
+                        local DecodeOk2, Data2 = pcall(function()
+                            return HttpService:JSONDecode(Res2)
+                        end)
+
+                        if DecodeOk2 and type(Data2) == "table" and #Data2 > 0 then
+                            UniverseId = Data2[1].universeId
+                        end
+                    end
+                end
+
+                if not UniverseId then
+                    return
+                end
+
+                -- fetch all places in the universe
+                local PlacesOk, PlacesRes = pcall(function()
+                    return game:HttpGet("https://games.roblox.com/v2/games/" .. UniverseId .. "/places?sortOrder=Asc&limit=50")
+                end)
+
+                if not PlacesOk or type(PlacesRes) ~= "string" then
+                    return
+                end
+
+                local DecodeOk, Data = pcall(function()
+                    return HttpService:JSONDecode(PlacesRes)
+                end)
+
+                if not (DecodeOk and type(Data) == "table" and type(Data.data) == "table") then
+                    return
+                end
+
+                Subplaces = {}
+                SubplaceNames = { "Current place" }
+
+                -- include the current place first
+                table.insert(Subplaces, { name = "Current place", id = BrowsePlaceId })
+
+                for _, Place in next, Data.data do
+                    if type(Place) == "table" and Place.id and Place.id ~= BrowsePlaceId then
+                        local Name = Place.name or ("Place " .. tostring(Place.id))
+                        table.insert(Subplaces, { name = Name, id = Place.id })
+                        table.insert(SubplaceNames, Name)
+                    end
+                end
+
+                -- rebuild to show the dropdown
+                pcall(function()
+                    RebuildList()
+                end)
+            end)
+        end
         local function RebuildList()
             local Container = Panel.Container or Panel.Content
 
@@ -9082,6 +9216,29 @@ function Library:CreateWindow(...)
                 end
             end
 
+            --// Subplace (auto-discovered) + manual Place ID + player join \\--
+            if #SubplaceNames > 1 then
+                local SubplaceDropdown = Panel:AddDropdown("ServerBrowserSubplace", {
+                    Values = SubplaceNames;
+                    Default = 1;
+                    Multi = false;
+                    Text = "Subplace";
+                })
+
+                SubplaceDropdown:OnChanged(function(Value)
+                    for _, Sp in next, Subplaces do
+                        if Sp.name == Value then
+                            BrowsePlaceId = Sp.id
+                            if PlaceIdInput then
+                                PlaceIdInput:SetValue(tostring(Sp.id))
+                            end
+                            RebuildList()
+                            FetchServers()
+                            return
+                        end
+                    end
+                end)
+            end
             --// Subplace (e.g. Da Hood / Da Hood VC) + player join \\--
             PlaceIdInput = Panel:AddInput("ServerBrowserPlaceId", {
                 Text = "Place ID (subplace)";
@@ -9184,6 +9341,9 @@ function Library:CreateWindow(...)
 
         RebuildList()
         FetchServers()
+
+        --// Auto-discover subplaces (Da Hood, Da Hood VC, ...) \\--
+        FetchSubplaces()
 
         return Panel
     end
