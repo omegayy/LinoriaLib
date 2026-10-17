@@ -9476,6 +9476,8 @@ end
                     end)
                 end
 
+                print("[Linoria Popout] Recorded="..#Recorded.." Mirrored="..Mirrored.." FallbackCloned="..(Target and "yes" or "no"))
+
                 Groupbox.Controls = Panel
                 Groupbox._PopoutPanel = Panel
 
