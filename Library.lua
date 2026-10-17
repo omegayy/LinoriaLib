@@ -7507,6 +7507,8 @@ do
                 local Value = Levels[LevelIdx]
                 Popout:SetTransparency(Value)
                 TransparencyRow.Text = string.format("Transparency (click): %d%%", math.floor(Value * 100 + 0.5))
+
+                Popout:Save()
             end)
         end
 
@@ -9449,6 +9451,9 @@ function Library:CreateWindow(...)
             end)
             if type(Library.SaveKeybindFilters) == "function" then
                 Library:SaveKeybindFilters()
+            end
+            if type(Panel.Save) == "function" then
+                Panel:Save()
             end
         end)
 
