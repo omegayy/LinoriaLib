@@ -871,6 +871,10 @@ MiscBox:AddButton({
 -- The same ESP module works for live players AND for UI previews.
 local EspGroup = FeaturesTab:AddRightGroupbox("ESP Preview")
 
+local PreviewContainer = Instance.new("Frame")
+PreviewContainer.BackgroundTransparency = 1
+PreviewContainer.Size = UDim2.fromScale(1, 1)
+
 local PreviewData = ESP.new({
 	ShowName = true,
 	ShowHealth = true,
@@ -881,10 +885,10 @@ local PreviewData = ESP.new({
 	Color = Color3.fromRGB(235, 75, 75),
 	TextColor = Color3.new(1, 1, 1),
 	OutlineColor = Color3.new(0, 0, 0),
-}):Preview()
+}):Preview(PreviewContainer)
 
 EspGroup:AddUIPassthrough("EspPreview", {
-	Instance = PreviewData.Viewport,
+	Instance = PreviewContainer,
 	Height = 220,
 	Visible = true,
 })
