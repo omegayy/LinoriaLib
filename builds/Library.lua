@@ -8903,6 +8903,17 @@ function Library:CreateWindow(...)
 
         Panel:AddDivider()
 
+        -- Menu keybind (UI toggle key) — lives in the settings wheel now
+        Panel:AddLabel("Menu keybind"):AddKeyPicker("MenuKeybind", { Default = "End", NoUI = true, Text = "Menu keybind" })
+        if Options.MenuKeybind then
+            Options.MenuKeybind:OnChanged(function()
+                Library.ToggleKeybind = Options.MenuKeybind
+            end)
+            Library.ToggleKeybind = Options.MenuKeybind
+        end
+
+        Panel:AddDivider()
+
         Panel:AddButton({
             Text = "Unload";
             Func = function()
