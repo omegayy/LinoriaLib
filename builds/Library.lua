@@ -8057,8 +8057,8 @@ do
                 ShowBoundOnly = Data.ShowBoundOnly == true;
                 ShowEnabledOnly = Data.ShowEnabledOnly == true;
                 HiddenKeybinds = (typeof(Data.HiddenKeybinds) == "table" and Data.HiddenKeybinds) or {};
-                KeybindTransparency = (typeof(Data.KeybindTransparency) == "number" and Data.KeybindTransparency) or Library.KeybindTransparency;
-                PopoutTransparency = (typeof(Data.PopoutTransparency) == "number" and Data.PopoutTransparency) or Library.PopoutTransparency;
+                KeybindTransparency = (typeof(Data.KeybindTransparency) == "number" and Data.KeybindTransparency) or 0;
+                PopoutTransparency = (typeof(Data.PopoutTransparency) == "number" and Data.PopoutTransparency) or 0;
             }
 
             --// Apply per-keybind visibility \\--
@@ -8072,8 +8072,8 @@ do
             end
 
             --// Apply transparency \\--
-            Library.KeybindTransparency = Library.KeybindFilters.KeybindTransparency
-            Library.PopoutTransparency = Library.KeybindFilters.PopoutTransparency
+            Library.KeybindTransparency = Library.KeybindFilters.KeybindTransparency or 0
+            Library.PopoutTransparency = Library.KeybindFilters.PopoutTransparency or 0
 
             pcall(function()
                 if Library.KeybindFrame then
