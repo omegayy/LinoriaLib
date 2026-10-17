@@ -1,93 +1,65 @@
 local ESP = {}
 ESP.__index = ESP
 
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+-- ============================================================================
+--  Helpers
+-- ============================================================================
+
+-- Bounding box of a model, in world space. Uses the engine's own
+-- GetBoundingBox (fast) and only falls back to manual work if it fails.
 local function GetBoundingBox(Model)
+	if typeof(Model) ~= "Instance" then
+		return CFrame.new(), Vector3.new(3, 5, 1)
+	end
+
 	if Model:IsA("BasePart") then
 		return Model.CFrame, Model.Size
 	end
 
+	local Ok, Cf, Sz = pcall(function()
+		return Model:GetBoundingBox()
+	end)
+
+	if Ok and typeof(Cf) == "CFrame" and typeof(Sz) == "Vector3" then
+		return Cf, Sz
+	end
+
 	local Primary = Model.PrimaryPart or Model:FindFirstChildWhichIsA("BasePart")
-	if not Primary then
-		local Parts = Model:GetDescendants()
-		local Min, Max = nil, nil
-
-		for _, Inst in next, Parts do
-			if Inst:IsA("BasePart") and Inst.CanCollide then
-				local cf, sz = Inst.CFrame, Inst.Size
-				local h = sz * 0.5
-				local Points = {
-					cf:PointToWorldSpace(Vector3.new(-h.X, -h.Y, -h.Z)),
-					cf:PointToWorldSpace(Vector3.new(h.X, -h.Y, -h.Z)),
-					cf:PointToWorldSpace(Vector3.new(-h.X, h.Y, -h.Z)),
-					cf:PointToWorldSpace(Vector3.new(h.X, h.Y, -h.Z)),
-					cf:PointToWorldSpace(Vector3.new(-h.X, -h.Y, h.Z)),
-					cf:PointToWorldSpace(Vector3.new(h.X, -h.Y, h.Z)),
-					cf:PointToWorldSpace(Vector3.new(-h.X, h.Y, h.Z)),
-					cf:PointToWorldSpace(Vector3.new(h.X, h.Y, h.Z)),
-				}
-
-				for _, p in next, Points do
-					local v = p
-					if Min == nil then
-						Min, Max = v, v
-					else
-						Min = Vector3.new(math.min(Min.X, v.X), math.min(Min.Y, v.Y), math.min(Min.Z, v.Z))
-						Max = Vector3.new(math.max(Max.X, v.X), math.max(Max.Y, v.Y), math.max(Max.Z, v.Z))
-					end
-				end
-			end
-		end
-
-		if not Min then
-			return CFrame.new(Model:GetPivot().Position), Vector3.one
-		end
-
-		local Size = Max - Min
-		local Cf = CFrame.new(Min:Lerp(Max, 0.5))
-		return Cf, Size
+	if Primary then
+		return Primary.CFrame, Primary.Size
 	end
 
-	return Primary.CFrame, Primary.Size
-end
-
-local function ProjectTo2D(Camera, TargetGui, WorldPos)
-	if not Camera or not TargetGui or not WorldPos then
-		return nil
-	end
-
-	local V = Camera:WorldToViewportPoint(WorldPos)
-	if V.Z <= 0 then
-		return nil
-	end
-
-	local Sz = TargetGui.AbsoluteSize
-	return Vector2.new(V.X * Sz.X, V.Y * Sz.Y)
+	return CFrame.new(Model:GetPivot().Position), Vector3.new(3, 5, 1)
 end
 
 local function GetHumanoid(Model)
+	if typeof(Model) ~= "Instance" then
+		return nil
+	end
+
 	if Model:IsA("Model") then
-		local Hum = Model:FindFirstChildWhichIsA("Humanoid")
-		if Hum then
-			return Hum
-		end
+		return Model:FindFirstChildWhichIsA("Humanoid")
 	end
 
 	if Model:IsA("Player") then
 		local Char = Model.Character
-		if Char then
-			return Char:FindFirstChildWhichIsA("Humanoid")
-		end
+		return Char and Char:FindFirstChildWhichIsA("Humanoid") or nil
 	end
 
 	return nil
 end
 
 local function GetRoot(Model)
+	if typeof(Model) ~= "Instance" then
+		return nil
+	end
+
 	if Model:IsA("Model") then
-		local Root = Model.PrimaryPart or Model:FindFirstChild("HumanoidRootPart") or Model:FindFirstChildWhichIsA("BasePart")
-		if Root then
-			return Root
-		end
+		return Model.PrimaryPart or Model:FindFirstChild("HumanoidRootPart") or Model:FindFirstChildWhichIsA("BasePart")
 	end
 
 	if Model:IsA("Player") then
@@ -101,6 +73,9 @@ local function GetRoot(Model)
 end
 
 local function GetChar(Model)
+	if typeof(Model) ~= "Instance" then
+		return nil
+	end
 	if Model:IsA("Player") then
 		return Model.Character
 	end
@@ -110,9 +85,19 @@ local function GetChar(Model)
 	return nil
 end
 
+-- Turns a health ratio into a green -> yellow -> red color
+local function HealthColor(Ratio)
+	return Color3.fromHSV(0.33 * math.clamp(Ratio, 0, 1), 0.85, 1)
+end
+
+-- ============================================================================
+--  Setup
+-- ============================================================================
+
 function ESP.new(Options)
 	Options = Options or {}
 	local self = setmetatable({}, ESP)
+
 	self.PlayersOnly = Options.PlayersOnly ~= false
 	self.TeamCheck = Options.TeamCheck == true
 	self.AliveCheck = Options.AliveCheck ~= false
@@ -126,23 +111,25 @@ function ESP.new(Options)
 	self.ShowBox = Options.ShowBox ~= false
 	self.ShowFill = Options.ShowFill == true
 	self.ShowTracer = Options.ShowTracer == true
+
 	self.Objects = {}
 	self.Tracked = {}
 	self.Connections = {}
+
 	self.Folder = Options.Folder or Instance.new("Folder")
-	if not self.Folder.Name then
-		self.Folder.Name = "ESP"
-	end
-
-	local Ok, RootGui = pcall(function()
-		return game:GetService("CoreGui")
-	end)
-
-	if not Ok then
-		RootGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
-	end
-
 	self.Folder.Name = "ESP"
+
+	-- Prefer a hidden container, fall back to PlayerGui
+	local Ok, RootGui = pcall(function()
+		return (gethui and gethui()) or game:GetService("CoreGui")
+	end)
+	if not Ok or typeof(RootGui) ~= "Instance" then
+		RootGui = LocalPlayer and LocalPlayer:FindFirstChildOfClass("PlayerGui")
+	end
+	if not RootGui and LocalPlayer then
+		RootGui = LocalPlayer:WaitForChild("PlayerGui", 10)
+	end
+
 	self.Folder.Parent = RootGui
 
 	self.TracerGui = Instance.new("ScreenGui")
@@ -150,7 +137,7 @@ function ESP.new(Options)
 	self.TracerGui.IgnoreGuiInset = true
 	self.TracerGui.ResetOnSpawn = false
 	self.TracerGui.DisplayOrder = 999
-	self.TracerGui.Parent = self.Folder.Parent
+	self.TracerGui.Parent = RootGui
 
 	self.Running = false
 	return self
@@ -158,12 +145,13 @@ end
 
 function ESP:Set(Options)
 	if not Options then return end
-	self.Color = Options.Color or self.Color
-	self.OutlineColor = Options.OutlineColor or self.OutlineColor
-	self.TextColor = Options.TextColor or self.TextColor
-	self.PlayersOnly = Options.PlayersOnly ~= nil and Options.PlayersOnly or self.PlayersOnly
-	self.TeamCheck = Options.TeamCheck ~= nil and Options.TeamCheck or self.TeamCheck
-	self.AliveCheck = Options.AliveCheck ~= nil and Options.AliveCheck or self.AliveCheck
+
+	if Options.Color ~= nil then self.Color = Options.Color end
+	if Options.OutlineColor ~= nil then self.OutlineColor = Options.OutlineColor end
+	if Options.TextColor ~= nil then self.TextColor = Options.TextColor end
+	if Options.PlayersOnly ~= nil then self.PlayersOnly = Options.PlayersOnly end
+	if Options.TeamCheck ~= nil then self.TeamCheck = Options.TeamCheck end
+	if Options.AliveCheck ~= nil then self.AliveCheck = Options.AliveCheck end
 	if Options.MaxDistance ~= nil then self.MaxDistance = Options.MaxDistance end
 	if Options.ShowName ~= nil then self.ShowName = Options.ShowName end
 	if Options.ShowHealth ~= nil then self.ShowHealth = Options.ShowHealth end
@@ -173,38 +161,40 @@ function ESP:Set(Options)
 	if Options.ShowTracer ~= nil then self.ShowTracer = Options.ShowTracer end
 end
 
+-- ============================================================================
+--  Tracking (this is what draws the boxes on real players)
+-- ============================================================================
+
 function ESP:Add(Target, Overrides)
 	Overrides = Overrides or {}
-	local Key = nil
-	if typeof(Target) == "Instance" then
-		Key = Target.Name
-	else
-		Key = tostring(Target)
-	end
 
+	local Key = typeof(Target) == "Instance" and Target.Name or tostring(Target)
 	if self.Objects[Key] then
 		return self.Objects[Key]
 	end
 
-	local Entry = {}
-	Entry.Target = Target
-	Entry.Enabled = true
-	Entry.Color = Overrides.Color or self.Color
-	Entry.Overrides = Overrides
+	local Entry = {
+		Target = Target,
+		Enabled = true,
+		Color = Overrides.Color or self.Color,
+		Overrides = Overrides,
+	}
 
+	-- One BillboardGui per player, sized in STUDIES so it automatically
+	-- scales with distance (that is what makes the box hug the character).
 	local Main = Instance.new("BillboardGui")
 	Main.Name = Key
 	Main.Adornee = nil
 	Main.AlwaysOnTop = true
-	Main.Size = UDim2.new(0, 180, 0, 70)
-	Main.StudsOffset = Vector3.new(0, 3, 0)
+	Main.Size = UDim2.fromScale(3.5, 5.5)
+	Main.StudsOffsetWorldSpace = Vector3.zero
+	Main.Enabled = false
 	Main.Parent = self.Folder
 
 	local Box = Instance.new("Frame")
 	Box.Name = "Box"
 	Box.BackgroundTransparency = 1
-	Box.Size = UDim2.new(1, -6, 1, -6)
-	Box.Position = UDim2.new(0, 3, 0, 3)
+	Box.Size = UDim2.fromScale(1, 1)
 	Box.Visible = self.ShowBox
 	Box.Parent = Main
 
@@ -217,51 +207,83 @@ function ESP:Add(Target, Overrides)
 	BoxFill.Name = "Fill"
 	BoxFill.BackgroundColor3 = Entry.Color
 	BoxFill.BackgroundTransparency = 0.85
-	BoxFill.Size = UDim2.new(1, 0, 1, 0)
+	BoxFill.BorderSizePixel = 0
+	BoxFill.Size = UDim2.fromScale(1, 1)
 	BoxFill.Visible = self.ShowFill
 	BoxFill.ZIndex = 1
 	BoxFill.Parent = Box
 
+	-- Name sits on top of the box, health + distance below it.
+	-- Text is pixel-sized so it stays readable at any distance.
 	local Name = Instance.new("TextLabel")
 	Name.Name = "Name"
 	Name.BackgroundTransparency = 1
-	Name.Position = UDim2.new(0, 5, 0, -18)
-	Name.Size = UDim2.new(1, -10, 0, 16)
+	Name.AnchorPoint = Vector2.new(0.5, 1)
+	Name.Position = UDim2.new(0.5, 0, 0, -3)
+	Name.Size = UDim2.new(1, 40, 0, 15)
 	Name.Font = Enum.Font.GothamBold
 	Name.TextSize = 14
 	Name.TextColor3 = self.TextColor
 	Name.TextStrokeTransparency = 0.4
-	Name.TextXAlignment = Enum.TextXAlignment.Left
+	Name.TextXAlignment = Enum.TextXAlignment.Center
+	Name.TextTruncate = Enum.TextTruncate.AtEnd
 	Name.Text = Overrides.Name or Key
 	Name.Visible = self.ShowName
+	Name.ZIndex = 2
 	Name.Parent = Main
+
+	local HealthBar = Instance.new("Frame")
+	HealthBar.Name = "HealthBar"
+	HealthBar.BackgroundColor3 = Color3.new(0, 0, 0)
+	HealthBar.BackgroundTransparency = 0.35
+	HealthBar.BorderSizePixel = 0
+	HealthBar.AnchorPoint = Vector2.new(1, 0.5)
+	HealthBar.Position = UDim2.new(0, -3, 0.5, 0)
+	HealthBar.Size = UDim2.new(0, 3, 1, 0)
+	HealthBar.Visible = self.ShowHealth
+	HealthBar.ZIndex = 1
+	HealthBar.Parent = Main
+
+	local HealthFill = Instance.new("Frame")
+	HealthFill.Name = "HealthFill"
+	HealthFill.BackgroundColor3 = Color3.fromRGB(90, 220, 110)
+	HealthFill.BorderSizePixel = 0
+	HealthFill.AnchorPoint = Vector2.new(0, 1)
+	HealthFill.Position = UDim2.fromScale(0, 1)
+	HealthFill.Size = UDim2.fromScale(1, 1)
+	HealthFill.ZIndex = 2
+	HealthFill.Parent = HealthBar
 
 	local Health = Instance.new("TextLabel")
 	Health.Name = "Health"
 	Health.BackgroundTransparency = 1
-	Health.Position = UDim2.new(0, 5, 1, 2)
-	Health.Size = UDim2.new(1, -10, 0, 12)
+	Health.AnchorPoint = Vector2.new(0.5, 0)
+	Health.Position = UDim2.new(0.5, 0, 1, 2)
+	Health.Size = UDim2.new(1, 40, 0, 13)
 	Health.Font = Enum.Font.Gotham
 	Health.TextSize = 12
 	Health.TextColor3 = self.TextColor
 	Health.TextStrokeTransparency = 0.4
-	Health.TextXAlignment = Enum.TextXAlignment.Left
+	Health.TextXAlignment = Enum.TextXAlignment.Center
 	Health.Text = "HP: -"
 	Health.Visible = self.ShowHealth
+	Health.ZIndex = 2
 	Health.Parent = Main
 
 	local Dist = Instance.new("TextLabel")
 	Dist.Name = "Dist"
 	Dist.BackgroundTransparency = 1
-	Dist.Position = UDim2.new(0, 5, 1, 16)
-	Dist.Size = UDim2.new(1, -10, 0, 12)
+	Dist.AnchorPoint = Vector2.new(0.5, 0)
+	Dist.Position = UDim2.new(0.5, 0, 1, 16)
+	Dist.Size = UDim2.new(1, 40, 0, 13)
 	Dist.Font = Enum.Font.Gotham
 	Dist.TextSize = 12
 	Dist.TextColor3 = self.TextColor
 	Dist.TextStrokeTransparency = 0.4
-	Dist.TextXAlignment = Enum.TextXAlignment.Left
+	Dist.TextXAlignment = Enum.TextXAlignment.Center
 	Dist.Text = "[0m]"
 	Dist.Visible = self.ShowDistance
+	Dist.ZIndex = 2
 	Dist.Parent = Main
 
 	local Tracer = Instance.new("Frame")
@@ -269,9 +291,8 @@ function ESP:Add(Target, Overrides)
 	Tracer.BackgroundColor3 = Entry.Color
 	Tracer.BorderSizePixel = 0
 	Tracer.AnchorPoint = Vector2.new(0.5, 0.5)
-	Tracer.Size = UDim2.new(0, 0, 0, 1)
-	Tracer.Visible = self.ShowTracer
-	Tracer.ZIndex = 0
+	Tracer.Size = UDim2.fromOffset(0, 1)
+	Tracer.Visible = false
 	Tracer.Parent = self.TracerGui
 
 	Entry.Gui = Main
@@ -279,6 +300,8 @@ function ESP:Add(Target, Overrides)
 	Entry.BoxStroke = BoxStroke
 	Entry.BoxFill = BoxFill
 	Entry.NameLabel = Name
+	Entry.HealthBar = HealthBar
+	Entry.HealthFill = HealthFill
 	Entry.HealthLabel = Health
 	Entry.DistLabel = Dist
 	Entry.Tracer = Tracer
@@ -291,13 +314,14 @@ function ESP:Remove(Target)
 	local Key = typeof(Target) == "Instance" and Target.Name or tostring(Target)
 	local Entry = self.Objects[Key]
 	if not Entry then return end
+
 	if Entry.Gui then Entry.Gui:Destroy() end
 	if Entry.Tracer then Entry.Tracer:Destroy() end
 	self.Objects[Key] = nil
 end
 
 function ESP:Clear()
-	for Key, Entry in next, self.Objects do
+	for _, Entry in next, self.Objects do
 		if Entry.Gui then Entry.Gui:Destroy() end
 		if Entry.Tracer then Entry.Tracer:Destroy() end
 	end
@@ -306,11 +330,13 @@ end
 
 function ESP:TrackPlayers()
 	self:Clear()
-	local Players = game:GetService("Players")
+
 	local Camera = workspace.CurrentCamera
 
 	for _, p in next, Players:GetPlayers() do
-		self:Add(p)
+		if p ~= LocalPlayer then
+			self:Add(p)
+		end
 	end
 
 	if not self.Tracked._PlayerAdded then
@@ -331,12 +357,12 @@ function ESP:TrackPlayers()
 	self.Running = true
 
 	task.spawn(function()
-		local RunService = game:GetService("RunService")
 		local Heartbeat = RunService.Heartbeat
 
 		while self.Running do
 			Heartbeat:Wait()
 			Camera = workspace.CurrentCamera
+			if not Camera then continue end
 
 			for _, Entry in next, self.Objects do
 				local Target = Entry.Target
@@ -344,57 +370,56 @@ function ESP:TrackPlayers()
 				local Root = GetRoot(Target)
 				local Hum = GetHumanoid(Target)
 
-				if not Char or not Root or not Hum then
+				local function Hide()
 					if Entry.Gui then Entry.Gui.Enabled = false end
 					if Entry.Tracer then Entry.Tracer.Visible = false end
+				end
+
+				-- character not spawned yet / already dead / turned off
+				if not Char or not Root or not Hum or Entry.Enabled == false then
+					Hide()
 					continue
 				end
 
 				if self.AliveCheck and Hum.Health <= 0 then
-					if Entry.Gui then Entry.Gui.Enabled = false end
-					if Entry.Tracer then Entry.Tracer.Visible = false end
+					Hide()
 					continue
 				end
 
-				if typeof(Target) == "Player" then
-					if self.TeamCheck then
-						local MyChar = GetChar(game:GetService("Players").LocalPlayer)
-						if MyChar then
-							local MyTeam = game:GetService("Players").LocalPlayer.Team
-							if MyTeam ~= Target.Team then
-								-- allow; keep simple
-							end
-						end
+				-- hide team-mates when TeamCheck is on
+				if self.TeamCheck and Target:IsA("Player") then
+					local MyTeam = LocalPlayer and LocalPlayer.Team
+					if MyTeam and Target.Team == MyTeam then
+						Hide()
+						continue
 					end
 				end
 
-				local Cf, Sz = GetBoundingBox(Char)
-				local Top = Cf.Position + Vector3.new(0, Sz.Y * 0.5 + 1.5, 0)
-				local Bottom = Cf.Position - Vector3.new(0, Sz.Y * 0.5 + 1, 0)
-				local Pos = ProjectTo2D(Camera, self.Folder.Parent or Camera, Top)
-				local Btm = ProjectTo2D(Camera, self.Folder.Parent or Camera, Bottom)
-
-				if not Pos or not Btm then
-					if Entry.Gui then Entry.Gui.Enabled = false end
-					if Entry.Tracer then Entry.Tracer.Visible = false end
+				-- distance limit (stud distance from our camera)
+				local Distance = (Root.Position - Camera.CFrame.Position).Magnitude
+				if self.MaxDistance and Distance > self.MaxDistance then
+					Hide()
 					continue
 				end
 
-				local Height = (Btm.Y - Pos.Y)
-				local Width = Height * 0.5
+				-- the box IS the character's bounding box, in studs, centered on it
+				local BbCf, BbSize = GetBoundingBox(Char)
+				local Center = BbCf.Position
 
 				if Entry.Gui then
 					Entry.Gui.Enabled = true
-					Entry.Gui.Size = UDim2.new(0, Width, 0, Height)
 					Entry.Gui.Adornee = Root
-					Entry.Gui.StudsOffset = Vector3.new(0, Sz.Y * 0.5 + 3, 0)
+					Entry.Gui.Size = UDim2.fromScale(math.max(BbSize.X, 1.2), math.max(BbSize.Y, 2))
+					Entry.Gui.StudsOffsetWorldSpace = Center - Root.Position
+
+					local Col = Entry.Color or self.Color
 
 					if Entry.Box then
 						Entry.Box.Visible = self.ShowBox
 					end
 					if Entry.BoxFill then
 						Entry.BoxFill.Visible = self.ShowFill
-						Entry.BoxFill.BackgroundColor3 = Entry.Color or self.Color
+						Entry.BoxFill.BackgroundColor3 = Col
 					end
 					if Entry.BoxStroke then
 						Entry.BoxStroke.Color = self.OutlineColor
@@ -404,43 +429,49 @@ function ESP:TrackPlayers()
 						Entry.NameLabel.TextColor3 = self.TextColor
 						Entry.NameLabel.Text = Entry.Overrides.Name or Target.Name
 					end
+					if Entry.HealthBar and Entry.HealthFill then
+						local Ratio = math.clamp(Hum.Health / math.max(Hum.MaxHealth, 1), 0, 1)
+						Entry.HealthBar.Visible = self.ShowHealth
+						Entry.HealthFill.Visible = self.ShowHealth
+						Entry.HealthFill.Size = UDim2.fromScale(1, Ratio)
+						Entry.HealthFill.BackgroundColor3 = HealthColor(Ratio)
+					end
 					if Entry.HealthLabel then
 						Entry.HealthLabel.Visible = self.ShowHealth
 						Entry.HealthLabel.TextColor3 = self.TextColor
 						Entry.HealthLabel.Text = string.format("HP: %d/%d", math.floor(Hum.Health + 0.5), math.floor(Hum.MaxHealth + 0.5))
 					end
 					if Entry.DistLabel then
-						local DistVal = math.floor((Root.Position - Camera.CFrame.Position).Magnitude + 0.5)
 						Entry.DistLabel.Visible = self.ShowDistance
 						Entry.DistLabel.TextColor3 = self.TextColor
-						Entry.DistLabel.Text = string.format("[%dm]", DistVal)
+						Entry.DistLabel.Text = string.format("[%dm]", math.floor(Distance + 0.5))
 					end
 				end
 
-				if Entry.Tracer and self.ShowTracer then
-					Entry.Tracer.Visible = true
-					Entry.Tracer.BackgroundColor3 = Entry.Color or self.Color
-						local Screen = self.TracerGui
-					if Screen and Screen:IsA("ScreenGui") then
-						local Abs = Screen.AbsoluteSize
-						local MidX = Abs.X * 0.5
-						local MidY = Abs.Y
-						local T = Pos
-						local D = Vector2.new(T.X - MidX, T.Y - MidY)
-						local L = D.Magnitude
-						if L > 1 then
-							local M = (Vector2.new(MidX, MidY) + T) * 0.5
-							Entry.Tracer.Position = UDim2.fromOffset(M.X, M.Y)
-							Entry.Tracer.Size = UDim2.fromOffset(L, 1)
-							Entry.Tracer.Rotation = math.deg(math.atan2(D.Y, D.X))
+				-- Tracer: WorldToViewportPoint already returns PIXELS, no scaling needed
+				if Entry.Tracer then
+					local V, OnScreen = Camera:WorldToViewportPoint(Root.Position)
+
+					if self.ShowTracer and OnScreen then
+						local Abs = self.TracerGui.AbsoluteSize
+						local Origin = Vector2.new(Abs.X * 0.5, Abs.Y)
+						local TargetPt = Vector2.new(V.X, V.Y)
+						local Delta = TargetPt - Origin
+						local Len = Delta.Magnitude
+
+						if Len > 1 then
+							local Mid = (Origin + TargetPt) * 0.5
+							Entry.Tracer.Visible = true
+							Entry.Tracer.BackgroundColor3 = Entry.Color or self.Color
+							Entry.Tracer.Position = UDim2.fromOffset(Mid.X, Mid.Y)
+							Entry.Tracer.Size = UDim2.fromOffset(Len, 1)
+							Entry.Tracer.Rotation = math.deg(math.atan2(Delta.Y, Delta.X))
 						else
 							Entry.Tracer.Visible = false
 						end
 					else
 						Entry.Tracer.Visible = false
 					end
-				elseif Entry.Tracer then
-					Entry.Tracer.Visible = false
 				end
 			end
 		end
@@ -454,10 +485,12 @@ end
 function ESP:Destroy()
 	self:Stop()
 	self:Clear()
+
 	for _, c in next, self.Connections do
 		pcall(function() c:Disconnect() end)
 	end
 	table.clear(self.Connections)
+
 	if self.TracerGui then
 		self.TracerGui:Destroy()
 	end
@@ -466,10 +499,11 @@ function ESP:Destroy()
 	end
 end
 
+-- ============================================================================
+--  Preview — clones YOUR OWN avatar in a basic pose and shows it in a box
+-- ============================================================================
+
 function ESP:Preview(Parent)
-	-- Builds a little 3D showcase (a ViewportFrame dummy) plus a fully
-	-- self-contained ESP overlay drawn with plain Frames on top of it,
-	-- so the preview also works inside menus / ViewportFrames.
 	local Container = Parent
 	if not Container then
 		Container = Instance.new("Frame")
@@ -492,35 +526,122 @@ function ESP:Preview(Parent)
 	local Camera = Viewport.CurrentCamera
 	Camera.Parent = Viewport
 
-	local Model = Instance.new("Model")
-	Model.Name = "PreviewDummy"
+	-- Preview state, filled in once the avatar is ready
+	local PreviewModel = nil
+	local PreviewHeight = 5.4
+	local PreviewBase = CFrame.new(0, 2.75, 0)
 
-	local function MakePart(Name, Size, Offset, Color)
-		local Part = Instance.new("Part")
-		Part.Name = Name
-		Part.Size = Size
-		Part.CFrame = CFrame.new(Offset)
-		Part.Anchored = true
-		Part.Color = Color
-		Part.Material = Enum.Material.SmoothPlastic
-		Part.Parent = Model
-		return Part
+	-- Strips behaviour + physics, clears every joint back to the basic pose
+	local function NeutralizeClone(Clone)
+		for _, Obj in next, Clone:GetDescendants() do
+			if Obj:IsA("BaseScript") or Obj:IsA("Script") or Obj:IsA("LocalScript") or Obj:IsA("ModuleScript") then
+				Obj:Destroy()
+			elseif Obj:IsA("Animator") then
+				Obj:Destroy()
+			elseif Obj:IsA("ParticleEmitter") or Obj:IsA("Fire") or Obj:IsA("Smoke") or Obj:IsA("Light") then
+				Obj:Destroy()
+			elseif Obj:IsA("BasePart") then
+				Obj.Anchored = true
+				Obj.CanCollide = false
+				Obj.CanTouch = false
+				Obj.CanQuery = false
+				Obj.Massless = true
+			end
+		end
+
+		-- Zero out every joint transform -> the default (basic) pose
+		for _, Obj in next, Clone:GetDescendants() do
+			if Obj:IsA("Motor6D") then
+				Obj.Transform = CFrame.new()
+			end
+		end
+
+		local Hum = Clone:FindFirstChildWhichIsA("Humanoid")
+		if Hum then
+			Hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+			Hum.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+		end
+
+		Clone.Name = "PreviewAvatar"
 	end
 
-	MakePart("UpperTorso", Vector3.new(2, 2, 1), Vector3.new(0.4, 0, 0), Color3.fromRGB(75, 110, 200))
-	MakePart("LowerTorso", Vector3.new(2, 0.6, 1), Vector3.new(0.4, -0.35, 0), Color3.fromRGB(75, 110, 200))
-	MakePart("Head", Vector3.new(1, 1, 1), Vector3.new(0.4, 1.5, 0), Color3.fromRGB(245, 215, 175))
-	MakePart("LeftArm", Vector3.new(0.8, 1.8, 0.8), Vector3.new(-0.9, 0.1, 0), Color3.fromRGB(75, 110, 200))
-	MakePart("RightArm", Vector3.new(0.8, 1.8, 0.8), Vector3.new(1.7, 0.1, 0), Color3.fromRGB(75, 110, 200))
-	MakePart("LeftLeg", Vector3.new(0.8, 1.8, 0.8), Vector3.new(-0.05, -1.4, 0), Color3.fromRGB(45, 70, 140))
-	MakePart("RightLeg", Vector3.new(0.8, 1.8, 0.8), Vector3.new(0.85, -1.4, 0), Color3.fromRGB(45, 70, 140))
+	local function InstallAvatar(Clone)
+		NeutralizeClone(Clone)
+		Clone.Parent = Viewport
 
-	Model.Parent = Viewport
-	Model.PrimaryPart = Model:FindFirstChild("UpperTorso")
-	Camera.CFrame = CFrame.lookAt(Vector3.new(0.4, 0.9, 9), Vector3.new(0.4, 0.7, 0))
+		local Ok, _, Sz = pcall(function() return Clone:GetBoundingBox() end)
+		if Ok and typeof(Sz) == "Vector3" and Sz.Y > 0.5 then
+			PreviewHeight = Sz.Y
+		end
 
-	-- The ESP overlay itself. Rendered with plain Frames so it works
-	-- everywhere the ESP plugin gets Preview()ed (menus included).
+		PreviewBase = CFrame.new(0, PreviewHeight / 2 + 0.05, 0)
+		Clone:PivotTo(PreviewBase)
+		PreviewModel = Clone
+	end
+
+	-- Last resort if the avatar can't be cloned: a plain block dummy
+	local function MakeBlockDummy()
+		local Model = Instance.new("Model")
+		Model.Name = "PreviewDummy"
+
+		local function MakePart(Name, Size, Offset, Color)
+			local Part = Instance.new("Part")
+			Part.Name = Name
+			Part.Size = Size
+			Part.CFrame = CFrame.new(Offset)
+			Part.Anchored = true
+			Part.Color = Color
+			Part.Material = Enum.Material.SmoothPlastic
+			Part.Parent = Model
+			return Part
+		end
+
+		MakePart("UpperTorso", Vector3.new(2, 2, 1), Vector3.new(0, 0, 0), Color3.fromRGB(75, 110, 200))
+		MakePart("LowerTorso", Vector3.new(2, 0.6, 1), Vector3.new(0, -0.35, 0), Color3.fromRGB(75, 110, 200))
+		MakePart("Head", Vector3.new(1, 1, 1), Vector3.new(0, 1.5, 0), Color3.fromRGB(245, 215, 175))
+		MakePart("LeftArm", Vector3.new(0.8, 1.8, 0.8), Vector3.new(-1.4, 0.1, 0), Color3.fromRGB(75, 110, 200))
+		MakePart("RightArm", Vector3.new(0.8, 1.8, 0.8), Vector3.new(1.4, 0.1, 0), Color3.fromRGB(75, 110, 200))
+		MakePart("LeftLeg", Vector3.new(0.8, 1.8, 0.8), Vector3.new(-0.45, -1.4, 0), Color3.fromRGB(45, 70, 140))
+		MakePart("RightLeg", Vector3.new(0.8, 1.8, 0.8), Vector3.new(0.45, -1.4, 0), Color3.fromRGB(45, 70, 140))
+
+		Model.PrimaryPart = Model:FindFirstChild("UpperTorso")
+		return Model
+	end
+
+	-- Build the avatar in the background (cloning + description calls can yield)
+	task.spawn(function()
+		-- 1) our actual in-game character, frozen in a basic pose
+		local Char = LocalPlayer and LocalPlayer.Character
+		if typeof(Char) == "Instance" then
+			Char.Archivable = true
+			local Ok, Clone = pcall(function() return Char:Clone() end)
+			if Ok and typeof(Clone) == "Instance" then
+				InstallAvatar(Clone)
+				return
+			end
+		end
+
+		-- 2) no character? build it from our account's appearance
+		if LocalPlayer then
+			local OkDesc, Desc = pcall(function()
+				return Players:GetHumanoidDescriptionFromUserId(LocalPlayer.UserId)
+			end)
+			if OkDesc and typeof(Desc) == "Instance" then
+				local OkModel, Made = pcall(function()
+					return Players:CreateHumanoidModelFromDescription(Desc, Enum.HumanoidRigType.R15)
+				end)
+				if OkModel and typeof(Made) == "Instance" then
+					InstallAvatar(Made)
+					return
+				end
+			end
+		end
+
+		-- 3) plain block dummy
+		InstallAvatar(MakeBlockDummy())
+	end)
+
+	-- The ESP overlay itself, drawn with plain Frames so it works everywhere
 	local Overlay = Instance.new("Frame")
 	Overlay.Name = "ESP_Preview_Overlay"
 	Overlay.BackgroundTransparency = 1
@@ -571,7 +692,7 @@ function ESP:Preview(Parent)
 	HealthBar.BorderSizePixel = 0
 	HealthBar.AnchorPoint = Vector2.new(1, 0.5)
 	HealthBar.Size = UDim2.new(0, 4, 1, 0)
-	HealthBar.Visible = self.ShowHealth == true
+	HealthBar.Visible = self.ShowHealth ~= false
 	HealthBar.ZIndex = 2
 	HealthBar.Parent = Overlay
 
@@ -594,12 +715,21 @@ function ESP:Preview(Parent)
 	DistLabel.TextXAlignment = Enum.TextXAlignment.Center
 	DistLabel.AnchorPoint = Vector2.new(0.5, 0)
 	DistLabel.Size = UDim2.new(0, 200, 0, 14)
-	DistLabel.Visible = self.ShowDistance == true
+	DistLabel.Visible = self.ShowDistance ~= false
 	DistLabel.ZIndex = 3
 	DistLabel.Parent = Overlay
 
-	-- Projects a world point into ViewportFrame coordinates (perspective
-	-- divide like the game does, scaled to the viewport's AbsoluteSize).
+	local Tracer = Instance.new("Frame")
+	Tracer.Name = "Tracer"
+	Tracer.BackgroundColor3 = self.Color
+	Tracer.BorderSizePixel = 0
+	Tracer.AnchorPoint = Vector2.new(0.5, 0.5)
+	Tracer.Size = UDim2.fromOffset(0, 1)
+	Tracer.Visible = false
+	Tracer.ZIndex = 2
+	Tracer.Parent = Overlay
+
+	-- Perspective projection into the viewport, so the overlay tracks the avatar
 	local function ProjectPoint(WorldPos)
 		local Size = Viewport.AbsoluteSize
 		local ObjectSpace = Camera.CFrame:PointToObjectSpace(WorldPos)
@@ -620,23 +750,37 @@ function ESP:Preview(Parent)
 		NameLabel.Visible = false
 		HealthBar.Visible = false
 		DistLabel.Visible = false
+		Tracer.Visible = false
 	end
 
+	local PreviewName = (LocalPlayer and LocalPlayer.DisplayName) or "Preview"
+
 	local Connection
-	Connection = game:GetService("RunService").Heartbeat:Connect(function()
+	Connection = RunService.Heartbeat:Connect(function()
 		local Size = Viewport.AbsoluteSize
 		if Size.X < 12 or Size.Y < 12 then
 			HideEverything()
 			return
 		end
 
-		-- The dummy slowly spins so the ESP moves around a bit too.
-		local Angle = os.clock() % 8 / 8 * (math.pi * 2)
-		Model:PivotTo(CFrame.Angles(0, Angle, 0))
+		-- camera frames whatever avatar is loaded (cloning can still be in flight)
+		Camera.CFrame = CFrame.lookAt(
+			Vector3.new(0, PreviewHeight * 0.62, 9.5),
+			Vector3.new(0, PreviewHeight * 0.5, 0)
+		)
 
-		local Center = Model:GetPivot().Position
-		local TopPoint = ProjectPoint(Center + Vector3.new(0, 2.35, 0))
-		local BottomPoint = ProjectPoint(Center - Vector3.new(0, 2.65, 0))
+		if not PreviewModel then
+			HideEverything()
+			return
+		end
+
+		-- slow spin so the ESP overlay moves around a bit too
+		local Angle = os.clock() % 8 / 8 * (math.pi * 2)
+		PreviewModel:PivotTo(PreviewBase * CFrame.Angles(0, Angle, 0))
+
+		local Center = PreviewModel:GetPivot().Position
+		local TopPoint = ProjectPoint(Center + Vector3.new(0, PreviewHeight / 2 + 0.4, 0))
+		local BottomPoint = ProjectPoint(Center - Vector3.new(0, PreviewHeight / 2 + 0.6, 0))
 
 		if not TopPoint or not BottomPoint then
 			HideEverything()
@@ -644,7 +788,7 @@ function ESP:Preview(Parent)
 		end
 
 		local Height = math.max(BottomPoint.Y - TopPoint.Y, 8)
-		local Width = Height / 2.4
+		local Width = Height / 2.6
 		local MidX = (TopPoint.X + BottomPoint.X) / 2
 		local MidY = (TopPoint.Y + BottomPoint.Y) / 2
 
@@ -652,9 +796,10 @@ function ESP:Preview(Parent)
 		Box.Size = UDim2.fromOffset(Width, Height)
 		Box.Position = UDim2.fromOffset(MidX - Width / 2, MidY - Height / 2)
 		BoxOutline.Color = self.OutlineColor
+		Fill.BackgroundColor3 = self.Color
 
 		NameLabel.Visible = self.ShowName ~= false
-		NameLabel.Text = "Preview"
+		NameLabel.Text = PreviewName
 		NameLabel.Position = UDim2.fromOffset(MidX, MidY - Height / 2 - 2)
 		NameLabel.TextColor3 = self.TextColor
 
@@ -667,6 +812,27 @@ function ESP:Preview(Parent)
 		DistLabel.Text = "[128m]"
 		DistLabel.Position = UDim2.fromOffset(MidX, MidY + Height / 2 + 2)
 		DistLabel.TextColor3 = self.TextColor
+
+		-- tracer from the bottom-centre of the preview up to the box
+		if self.ShowTracer then
+			local Origin = Vector2.new(Size.X * 0.5, Size.Y)
+			local TargetPt = Vector2.new(MidX, MidY + Height / 2)
+			local Delta = TargetPt - Origin
+			local Len = Delta.Magnitude
+
+			if Len > 1 then
+				local Mid = (Origin + TargetPt) * 0.5
+				Tracer.Visible = true
+				Tracer.BackgroundColor3 = self.Color
+				Tracer.Position = UDim2.fromOffset(Mid.X, Mid.Y)
+				Tracer.Size = UDim2.fromOffset(Len, 1)
+				Tracer.Rotation = math.deg(math.atan2(Delta.Y, Delta.X))
+			else
+				Tracer.Visible = false
+			end
+		else
+			Tracer.Visible = false
+		end
 	end)
 
 	return {
@@ -692,7 +858,7 @@ function ESP:Preview(Parent)
 			NameLabel = NameLabel;
 			HealthLabel = HealthBar;
 			DistLabel = DistLabel;
-			Tracer = nil;
+			Tracer = Tracer;
 			Color = self.Color;
 		},
 	}

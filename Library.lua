@@ -1441,6 +1441,7 @@ local Templates = { -- TO-DO: do it for missing elements.
 local BaseAddons = {}
 do
     local BaseAddonsFuncs = {}
+    Library.__BaseAddonsFuncs = BaseAddonsFuncs --// exposed so pop-outs can replay keypickers/colorpickers
 
         function BaseAddonsFuncs:AddKeyPicker(Idx, Info)
         local ParentObj = self
@@ -1923,6 +1924,12 @@ do
         --// Is the feature this keybind controls currently switched on?
         function KeyPicker:IsEnabled()
             if KeyPicker.Mode == "Always" then
+                return true
+            end
+
+            --// A keypicker synced to a toggle follows that toggle's on/off state,
+            --// otherwise it uses its own keybind-menu toggled state
+            if KeyPicker.SyncToggleState and typeof(ParentObj) == "table" and ParentObj.Value == true then
                 return true
             end
 
@@ -3430,6 +3437,7 @@ do
             end
             
             ListOuter.Visible = true
+            Library:BringToFront(ListOuter, 1000)
             Library.OpenedFrames[ListOuter] = true
             DropdownArrow.Rotation = 180
 
@@ -5500,6 +5508,7 @@ do
             end
 
             ListOuter.Visible = true
+            Library:BringToFront(ListOuter, 1000)
             Library.OpenedFrames[ListOuter] = true
             DropdownArrow.Rotation = 180
 
@@ -6606,6 +6615,117 @@ do
 
     Library:LoadPopouts()
 
+    --// ONE consistent settings-wheel button used everywhere: popout headers, the
+    --// keybind menu, and the window title bar all call this, so they look identical.
+    --// Uses the "settings" icon when available, otherwise draws a frame-based gear.
+    function Library:CreateSettingsWheelButton(Parent, Info)
+        Info = Info or {}
+
+        local BaseZ = Info.ZIndex or 205
+
+        local Button = Library:Create("TextButton", {
+            AnchorPoint = Info.AnchorPoint or Vector2.new(1, 0);
+            AutoButtonColor = false;
+            BackgroundTransparency = 1;
+            Position = Info.Position or UDim2.new(1, -3, 0, 2);
+            Size = Info.Size or UDim2.fromOffset(18, 18);
+            Text = "";
+            Font = Library.Font;
+            TextColor3 = Library.FontColor;
+            TextSize = 14;
+            TextStrokeTransparency = 0;
+            ZIndex = BaseZ;
+            Parent = Parent;
+        })
+
+        Library:ApplyTextStroke(Button)
+
+        local IconData = Library.GetCustomIcon and Library:GetCustomIcon("settings") or nil
+
+        if IconData then
+            local Icon = Library:Create("ImageLabel", {
+                BackgroundTransparency = 1;
+                AnchorPoint = Vector2.new(0.5, 0.5);
+                Position = UDim2.fromScale(0.5, 0.5);
+                Size = UDim2.fromScale(0.72, 0.72);
+                Image = IconData.Url;
+                ImageRectOffset = IconData.ImageRectOffset;
+                ImageRectSize = IconData.ImageRectSize;
+                ImageColor3 = Library.FontColor;
+                ZIndex = BaseZ + 1;
+                Parent = Button;
+            })
+
+            Library:AddToRegistry(Icon, { ImageColor3 = "FontColor" })
+
+            Library:OnHighlight(Button, Icon,
+                { ImageColor3 = "AccentColor" },
+                { ImageColor3 = "FontColor" },
+                function() return true end
+            )
+        else
+            local Gear = Library:Create("Frame", {
+                BackgroundTransparency = 1;
+                AnchorPoint = Vector2.new(0.5, 0.5);
+                Position = UDim2.fromScale(0.5, 0.5);
+                Size = UDim2.fromOffset(14, 14);
+                ZIndex = BaseZ + 1;
+                Parent = Button;
+            })
+
+            local Parts = {}
+
+            local Circle = Library:Create("Frame", {
+                BackgroundColor3 = Library.FontColor;
+                BorderSizePixel = 0;
+                AnchorPoint = Vector2.new(0.5, 0.5);
+                Position = UDim2.fromScale(0.5, 0.5);
+                Size = UDim2.fromOffset(11, 11);
+                ZIndex = BaseZ + 1;
+                Parent = Gear;
+            })
+
+            Library:Create("UICorner", { CornerRadius = UDim.new(0.5, 0), Parent = Circle })
+            table.insert(Parts, Circle)
+
+            for i = 0, 7 do
+                local Angle = math.rad(i * 45)
+
+                local Tooth = Library:Create("Frame", {
+                    BackgroundColor3 = Library.FontColor;
+                    BorderSizePixel = 0;
+                    AnchorPoint = Vector2.new(0.5, 0.5);
+                    Position = UDim2.new(0.5, math.cos(Angle) * 5.5, 0.5, math.sin(Angle) * 5.5);
+                    Size = UDim2.fromOffset(4, 4);
+                    ZIndex = BaseZ + 1;
+                    Parent = Gear;
+                })
+
+                table.insert(Parts, Tooth)
+            end
+
+            Library:Create("Frame", {
+                BackgroundColor3 = Library.BackgroundColor;
+                BorderSizePixel = 0;
+                AnchorPoint = Vector2.new(0.5, 0.5);
+                Position = UDim2.fromScale(0.5, 0.5);
+                Size = UDim2.fromOffset(4, 4);
+                ZIndex = BaseZ + 2;
+                Parent = Gear;
+            })
+
+            for _, Part in next, Parts do
+                Library:OnHighlight(Button, Part,
+                    { BackgroundColor3 = "AccentColor" },
+                    { BackgroundColor3 = "FontColor" },
+                    function() return true end
+                )
+            end
+        end
+
+        return Button
+    end
+
     function Library:CreatePopout(Info)
         Info = Info or {}
 
@@ -6788,7 +6908,11 @@ do
         end
 
         local CloseButton = CreateHeaderButton("X", "x", -3)
-        local SettingsButton = CreateHeaderButton("O", "settings", -23)
+        local SettingsButton = Library:CreateSettingsWheelButton(TitleBar, {
+            Position = UDim2.new(1, -23, 0, 2);
+            Size = UDim2.fromOffset(18, 18);
+            ZIndex = 205;
+        })
 
         -- Settings panel
         local SettingsOuter = Library:Create("Frame", {
@@ -7455,74 +7579,28 @@ do
     end
 
     AddKeybindFilterRow("Show bound only", 0,
-        function(Value) Library.KeybindFilters.ShowBoundOnly = Value end,
+        function(Value)
+            Library.KeybindFilters.ShowBoundOnly = Value
+            Library:SaveKeybindFilters()
+        end,
         function() return Library.KeybindFilters.ShowBoundOnly end
     )
 
     AddKeybindFilterRow("Show enabled only", 1,
-        function(Value) Library.KeybindFilters.ShowEnabledOnly = Value end,
+        function(Value)
+            Library.KeybindFilters.ShowEnabledOnly = Value
+            Library:SaveKeybindFilters()
+        end,
         function() return Library.KeybindFilters.ShowEnabledOnly end
     )
 
-    --// The little settings wheel (drawn with Frames so it always renders) \\--
-    local SettingsButton = Library:Create("TextButton", {
-        BackgroundTransparency = 1;
-        Text = "";
-        AutoButtonColor = false;
-        Size = UDim2.fromOffset(18, 18);
+    --// Settings wheel — shared helper so it matches the popout/window wheels \\--
+    local SettingsButton = Library:CreateSettingsWheelButton(KeybindInner, {
+        AnchorPoint = Vector2.new(0, 0);
         Position = UDim2.new(1, -21, 0, 1);
+        Size = UDim2.fromOffset(18, 18);
         ZIndex = 106;
-        Parent = KeybindInner;
     })
-
-    local Gear = Library:Create("Frame", {
-        BackgroundTransparency = 1;
-        AnchorPoint = Vector2.new(0.5, 0.5);
-        Position = UDim2.fromScale(0.5, 0.5);
-        Size = UDim2.fromOffset(14, 14);
-        ZIndex = 106;
-        Parent = SettingsButton;
-    })
-
-    local GearCircle = Library:Create("Frame", {
-        BackgroundColor3 = Library.FontColor;
-        BorderSizePixel = 0;
-        AnchorPoint = Vector2.new(0.5, 0.5);
-        Position = UDim2.fromScale(0.5, 0.5);
-        Size = UDim2.fromOffset(11, 11);
-        ZIndex = 106;
-        Parent = Gear;
-    })
-
-    Library:Create("UICorner", { CornerRadius = UDim.new(0.5, 0), Parent = GearCircle })
-
-    for i = 0, 7 do
-        local Angle = math.rad(i * 45)
-
-        local Tooth = Library:Create("Frame", {
-            BackgroundColor3 = Library.FontColor;
-            BorderSizePixel = 0;
-            AnchorPoint = Vector2.new(0.5, 0.5);
-            Position = UDim2.new(0.5, math.cos(Angle) * 5.5, 0.5, math.sin(Angle) * 5.5);
-            Size = UDim2.fromOffset(4, 4);
-            ZIndex = 106;
-            Parent = Gear;
-        })
-
-        Library:Create("UICorner", { CornerRadius = UDim.new(0.5, 0), Parent = Tooth })
-    end
-
-    local GearHole = Library:Create("Frame", {
-        BackgroundColor3 = Library.MainColor;
-        BorderSizePixel = 0;
-        AnchorPoint = Vector2.new(0.5, 0.5);
-        Position = UDim2.fromScale(0.5, 0.5);
-        Size = UDim2.fromOffset(4, 4);
-        ZIndex = 107;
-        Parent = Gear;
-    })
-
-    Library:Create("UICorner", { CornerRadius = UDim.new(0.5, 0), Parent = GearHole })
 
     table.insert(Library.DragBlockers, SettingsButton)
     table.insert(Library.DragBlockers, SettingsPopup)
@@ -7588,6 +7666,53 @@ do
 
         Library:UpdateKeybindFrameSize()
     end
+
+    --// Keybind filter persistence (survives rejoins) \\--
+    local FilterHttp = game:GetService("HttpService")
+    local FilterSaveFile = "library_keybindfilters.json"
+
+    function Library:SaveKeybindFilters()
+        if typeof(writefile) ~= "function" then
+            return
+        end
+
+        local Ok, Encoded = pcall(function()
+            return FilterHttp:JSONEncode(Library.KeybindFilters or {})
+        end)
+
+        if Ok and typeof(Encoded) == "string" then
+            pcall(writefile, FilterSaveFile, Encoded)
+        end
+    end
+
+    function Library:LoadKeybindFilters()
+        if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" then
+            return
+        end
+
+        local Ok, Contents = pcall(function()
+            return isfile(FilterSaveFile) and readfile(FilterSaveFile) or nil
+        end)
+
+        if not Ok or typeof(Contents) ~= "string" then
+            return
+        end
+
+        local DecodeOk, Data = pcall(function()
+            return FilterHttp:JSONDecode(Contents)
+        end)
+
+        if DecodeOk and typeof(Data) == "table" then
+            Library.KeybindFilters = {
+                ShowBoundOnly = Data.ShowBoundOnly == true;
+                ShowEnabledOnly = Data.ShowEnabledOnly == true;
+            }
+
+            Library:RefreshKeybindList()
+        end
+    end
+
+    Library:LoadKeybindFilters()
 end
 
 --// Watermark \\--
@@ -8122,6 +8247,39 @@ function Library:CreateWindow(...)
     --// Makes any popout's content render correctly: raises content ZIndex above
     --// the popout frames (this ScreenGui uses GLOBAL ZIndexBehavior) and sizes the
     --// content canvas so nothing gets clipped.
+    --// Raises an element and ALL of its descendants above the pop-out layers.
+    --// Dropdown lists live on the root ScreenGui with a low ZIndex, and with
+    --// the global ZIndexBehavior every child needs its own bump to escape the
+    --// pop-out window. The original ZIndex is stored as an attribute so
+    --// repeated opens don't keep pushing values higher and higher. \\--
+    function Library:BringToFront(Root, Base)
+        if typeof(Root) ~= "Instance" then
+            return
+        end
+
+        Base = Base or 1000
+
+        local function Apply(Inst)
+            if not Inst:IsA("GuiObject") then
+                return
+            end
+
+            local Original = Inst:GetAttribute("OriginalZIndex")
+            if Original == nil then
+                Original = Inst.ZIndex
+                Inst:SetAttribute("OriginalZIndex", Original)
+            end
+
+            Inst.ZIndex = Base + Original
+        end
+
+        Apply(Root)
+
+        for _, Inst in next, Root:GetDescendants() do
+            Apply(Inst)
+        end
+    end
+
     function Library:RefreshPopoutLayout(Panel)
         if typeof(Panel) ~= "table" then
             return Panel
@@ -8166,56 +8324,199 @@ function Library:CreateWindow(...)
         return Panel
     end
 
-    --// Options gear (top right corner of the window) \\--
-    local OptionsButton = Library:Create("TextButton", {
+    --// Options gear (top right corner of the window) — same shared wheel style \\--
+    local OptionsButton = Library:CreateSettingsWheelButton(Inner, {
+        AnchorPoint = Vector2.new(1, 0);
+        Position = UDim2.new(1, -159, 0, 3);
+        Size = UDim2.fromOffset(19, 19);
+        ZIndex = 5;
+    })
+
+    table.insert(Library.DragBlockers, OptionsButton)
+
+    --// Integrated server browser (button left of the options gear) \\--
+    local ServerButton = Library:Create("TextButton", {
         AnchorPoint = Vector2.new(1, 0);
         AutoButtonColor = false;
         BackgroundColor3 = Library.MainColor;
         BorderColor3 = Library.OutlineColor;
         BorderMode = Enum.BorderMode.Inset;
-        Position = UDim2.new(1, -159, 0, 3);
+        Position = UDim2.new(1, -181, 0, 3);
         Size = UDim2.fromOffset(19, 19);
-        Text = "";
+        Font = Library.Font;
+        Text = "S";
+        TextColor3 = Library.FontColor;
+        TextSize = 12;
         ZIndex = 5;
         Parent = Inner;
     })
 
-    Library:AddToRegistry(OptionsButton, {
+    Library:AddToRegistry(ServerButton, {
         BackgroundColor3 = "MainColor";
         BorderColor3 = "OutlineColor";
+        TextColor3 = "FontColor";
     })
 
-    do
-        local Icon = Library:GetCustomIcon("settings")
-        if Icon then
-            Library:Create("ImageLabel", {
-                BackgroundTransparency = 1;
-                Position = UDim2.fromOffset(3, 3);
-                Size = UDim2.new(1, -6, 1, -6);
-                Image = Icon.Url;
-                ImageRectOffset = Icon.ImageRectOffset;
-                ImageRectSize = Icon.ImageRectSize;
-                ImageColor3 = Library.FontColor;
-                ZIndex = 6;
-                Parent = OptionsButton;
-            })
-        else
-            OptionsButton.Text = "O"
-            OptionsButton.Font = Library.Font
-            OptionsButton.TextColor3 = Library.FontColor
-            OptionsButton.TextSize = 12
-            Library:ApplyTextStroke(OptionsButton)
-            Library:AddToRegistry(OptionsButton, { TextColor3 = "FontColor" })
-        end
-    end
-
-    Library:OnHighlight(OptionsButton, OptionsButton,
+    Library:OnHighlight(ServerButton, ServerButton,
         { BorderColor3 = "AccentColor" },
         { BorderColor3 = "OutlineColor" },
         function() return true end
     )
 
-    table.insert(Library.DragBlockers, OptionsButton)
+    table.insert(Library.DragBlockers, ServerButton)
+
+    --// Lists the public servers for this place and teleports to one on click.
+    --// Note: Roblox's server API does NOT expose region/ping, so sorting is by
+    --// player count and how full the server is. \\--
+    function Library:OpenServerBrowser()
+        if Library.Unloaded then
+            return nil
+        end
+
+        if typeof(Library.ServerBrowserPanel) == "table" and not Library.ServerBrowserPanel.Destroyed then
+            Library.ServerBrowserPanel:SetVisible(true)
+            return Library.ServerBrowserPanel
+        end
+
+        local HttpService = game:GetService("HttpService")
+        local TeleportService = game:GetService("TeleportService")
+        local PlaceId = game.PlaceId
+
+        local Panel = Library:CreatePopout({
+            Title = "Server Browser";
+            Size = UDim2.fromOffset(300, 420);
+            Position = UDim2.new(0.5, 0, 0.5, 0);
+            Visible = true;
+            ShowWhenMenuClosed = true;
+            Resizable = true;
+        })
+
+        Library.ServerBrowserPanel = Panel
+
+        local Servers = {}
+        local SortMode = "Most players"
+        local FetchServers = nil
+
+        local function SortServers()
+            table.sort(Servers, function(a, b)
+                local FillA = (a.playing or 0) / math.max(a.maxPlayers or 1, 1)
+                local FillB = (b.playing or 0) / math.max(b.maxPlayers or 1, 1)
+
+                if SortMode == "Least players" then
+                    return (a.playing or 0) < (b.playing or 0)
+                elseif SortMode == "Most full" then
+                    return FillA > FillB
+                elseif SortMode == "Least full" then
+                    return FillA < FillB
+                end
+
+                return (a.playing or 0) > (b.playing or 0)
+            end)
+        end
+
+        local function JoinServer(JobId)
+            Library:Notify("Joining server...", 2)
+            pcall(function()
+                TeleportService:TeleportToPlaceInstance(PlaceId, JobId, LocalPlayer)
+            end)
+        end
+
+        local function RebuildList()
+            local Container = Panel.Container or Panel.Content
+
+            if typeof(Container) == "Instance" then
+                for _, Child in next, Container:GetChildren() do
+                    if Child:IsA("GuiObject") then
+                        Child:Destroy()
+                    end
+                end
+            end
+
+            local SortDropdown = Panel:AddDropdown("ServerBrowserSort", {
+                Values = { "Most players", "Least players", "Most full", "Least full" };
+                Default = SortMode;
+                Multi = false;
+                Text = "Sort By";
+            })
+
+            SortDropdown:OnChanged(function(Value)
+                if Value == SortMode then return end
+
+                SortMode = Value
+                SortServers()
+                RebuildList()
+            end)
+
+            Panel:AddButton("Refresh Server List", function()
+                RebuildList()
+                FetchServers()
+            end)
+
+            Panel:AddDivider()
+
+            if #Servers == 0 then
+                Panel:AddLabel("No servers found.")
+            end
+
+            for _, Server in next, Servers do
+                local JobId = Server.id
+
+                Panel:AddButton({
+                    Text = string.format("%d/%d players — Join", Server.playing or 0, Server.maxPlayers or 0);
+                    Func = function()
+                        JoinServer(JobId)
+                    end,
+                })
+            end
+
+            pcall(function()
+                Library:RefreshPopoutLayout(Panel)
+            end)
+        end
+
+        FetchServers = function()
+            task.spawn(function()
+                local Ok, Response = pcall(function()
+                    return game:HttpGet("https://games.roblox.com/v1/games/" .. PlaceId .. "/servers/Public?limit=100")
+                end)
+
+                Servers = {}
+
+                if Ok and type(Response) == "string" then
+                    local DecodeOk, Data = pcall(function()
+                        return HttpService:JSONDecode(Response)
+                    end)
+
+                    if DecodeOk and type(Data) == "table" and type(Data.data) == "table" then
+                        for _, Server in next, Data.data do
+                            -- skip the server we are already in
+                            if type(Server) == "table" and Server.id and Server.id ~= game.JobId then
+                                table.insert(Servers, Server)
+                            end
+                        end
+                    end
+                end
+
+                SortServers()
+                RebuildList()
+
+                if #Servers == 0 then
+                    Library:Notify("Could not fetch server list (API may require auth).", 4)
+                end
+            end)
+        end
+
+        RebuildList()
+        FetchServers()
+
+        return Panel
+    end
+
+    ServerButton.MouseButton1Click:Connect(function()
+        if not Library.Unloaded then
+            Library:OpenServerBrowser()
+        end
+    end)
 
     --// Opens the options panel (theme settings, keybind filters, unload, rejoin).
     --// Add your own controls with:  Library.OptionsPanel:AddToggle(...)
@@ -8263,6 +8564,7 @@ function Library:CreateWindow(...)
             Library.KeybindFilters.ShowBoundOnly = Value
             if type(Library.RefreshKeybindList) == "function" then Library:RefreshKeybindList() end
             if type(Library.UpdateKeybindFrameSize) == "function" then Library:UpdateKeybindFrameSize() end
+            if type(Library.SaveKeybindFilters) == "function" then Library:SaveKeybindFilters() end
         end)
 
         Panel:AddToggle("Options_ShowEnabledOnly", {
@@ -8273,6 +8575,7 @@ function Library:CreateWindow(...)
             Library.KeybindFilters.ShowEnabledOnly = Value
             if type(Library.RefreshKeybindList) == "function" then Library:RefreshKeybindList() end
             if type(Library.UpdateKeybindFrameSize) == "function" then Library:UpdateKeybindFrameSize() end
+            if type(Library.SaveKeybindFilters) == "function" then Library:SaveKeybindFilters() end
         end)
 
         Panel:AddDivider()
@@ -9667,6 +9970,64 @@ end
                             Library:BindElements(Orig, Mirror)
                         end)
                     end
+
+                    --// Keypickers / colorpickers are added ON the element
+                    --// (Toggle:AddKeyPicker), not on the groupbox - replay them here
+                    --// so they show up in the pop-out too \\--
+                    if typeof(Orig) == "table" and type(Orig.RecordedAddons) == "table" then
+                        for _, AddonRec in next, Orig.RecordedAddons do
+                            local AddonArgs = {}
+                            for i = 1, (AddonRec.Args.n or #AddonRec.Args) do
+                                AddonArgs[i] = AddonRec.Args[i]
+                            end
+
+                            local AddonOrigIdx = AddonArgs[1]
+
+                            -- hidden keybinds (NoUI) stay hidden
+                            if type(AddonArgs[2]) ~= "table" or AddonArgs[2].NoUI then
+                                continue
+                            end
+
+                            if type(AddonArgs[1]) == "string" then
+                                AddonArgs[1] = AddonArgs[1] .. "_popout"
+                            end
+
+                            -- the original's callbacks fire through the sync below,
+                            -- so the mirror copy itself stays silent
+                            AddonArgs[2] = table.clone(AddonArgs[2])
+                            AddonArgs[2].Callback = nil
+                            AddonArgs[2].ChangedCallback = nil
+                            AddonArgs[2].Clicked = nil
+
+                            local AddonMethod = Library.__BaseAddonsFuncs and Library.__BaseAddonsFuncs[AddonRec.Method]
+                            if type(AddonMethod) ~= "function" then
+                                continue
+                            end
+
+                            -- start the mirror at the addon's live value
+                            local AddonOrig = (type(AddonOrigIdx) == "string") and Options[AddonOrigIdx] or nil
+                            if typeof(AddonOrig) == "table" then
+                                AddonArgs[2].Default = AddonOrig.Value
+                                if AddonRec.Method == "AddColorPicker" then
+                                    AddonArgs[2].Transparency = AddonOrig.Transparency
+                                end
+                            end
+
+                            local AddonOk = pcall(function()
+                                AddonMethod(Mirror, table.unpack(AddonArgs, 1, #AddonArgs))
+                            end)
+
+                            if AddonOk then
+                                local AddonMirror = (type(AddonArgs[1]) == "string") and Options[AddonArgs[1]] or nil
+
+                                if typeof(AddonOrig) == "table" and typeof(AddonMirror) == "table" and AddonOrig ~= AddonMirror then
+                                    pcall(function()
+                                        Library:BindAddonElements(AddonOrig, AddonMirror)
+                                    end)
+                                end
+                            end
+                        end
+                    end
                 end
 
                 -- Clone fallback only if NOTHING could be re-created via the API
@@ -10375,6 +10736,88 @@ do
         end
     end
 end
+
+--// Same recorder for element ADDONS (keypickers / colorpickers). Those are
+--// added on the element itself (Toggle:AddKeyPicker), so the groupbox
+--// recorder above never sees them - pop-outs replay them from this list.
+do
+    local AddonFuncs = Library.__BaseAddonsFuncs
+    local AddonMethods = { "AddKeyPicker", "AddColorPicker" }
+
+    for _, MethodName in next, AddonMethods do
+        local Original = AddonFuncs and AddonFuncs[MethodName]
+
+        if type(Original) == "function" then
+            AddonFuncs[MethodName] = function(Self, ...)
+                local N = select("#", ...)
+                local Args = { ... }
+                Args.n = N
+
+                local R0, R1, R2 = Original(Self, table.unpack(Args, 1, N))
+
+                if typeof(Self) == "table" then
+                    local Info = Args[2]
+
+                    -- NoUI keybinds are deliberately hidden everywhere
+                    if not (type(Info) == "table" and Info.NoUI) then
+                        Self.RecordedAddons = Self.RecordedAddons or {}
+                        table.insert(Self.RecordedAddons, {
+                            Method = MethodName;
+                            Args = Args;
+                        })
+                    end
+                end
+
+                return R0, R1, R2
+            end
+        end
+    end
+end
+
+    --// Keep an element and its pop-out mirror's ADDON (keypicker / colorpicker)
+    --// in sync. Addons store values differently (keybinds use a
+    --// {key, mode, modifiers} table), so they get their own binder that chains
+    --// onto the existing Changed handler instead of replacing it. \\--
+    function Library:BindAddonElements(Orig, Mirror)
+        if typeof(Orig) ~= "table" or typeof(Mirror) ~= "table" or Orig == Mirror then
+            return
+        end
+
+        local Syncing = false
+
+        local function Push(From, To)
+            if Syncing then
+                return
+            end
+
+            Syncing = true
+            pcall(function()
+                if From.Type == "KeyPicker" then
+                    To:SetValue({ From.Value, From.Mode, From.Modifiers }, true)
+                elseif From.Type == "ColorPicker" then
+                    To:SetValue(From.Value, From.Transparency)
+                else
+                    To:SetValue(From.Value)
+                end
+            end)
+            Syncing = false
+        end
+
+        local function Chain(Element, Target)
+            local Previous = Element.Changed
+
+            Element.Changed = function(...)
+                if type(Previous) == "function" then
+                    pcall(Previous, ...)
+                end
+
+                Push(Element, Target)
+            end
+        end
+
+        Chain(Orig, Mirror)
+        Chain(Mirror, Orig)
+    end
 
 --// Bind two elements together so they share state in both directions
 --// (used by Groupbox:Popout to make the popped-out copy fully interactive).
