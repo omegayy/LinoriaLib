@@ -10812,6 +10812,15 @@ end
                     Resizable = true,
                 })
 
+                pcall(function()
+                    local Saved = Library.PopoutLayout and Library.PopoutLayout[Panel.Name]
+                    if Saved then
+                        Library:Notify("Restored layout for: " .. tostring(Panel.Name), 2)
+                    else
+                        Library:Notify("No saved layout for: " .. tostring(Panel.Name), 2)
+                    end
+                end)
+
                 local Mirrored = 0
 
                 -- Re-create every element through the REAL library API inside
