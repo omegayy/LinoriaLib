@@ -1707,6 +1707,71 @@ do
                 end
             )
 
+            --// Per-keybind visibility toggle (eye button) — hides/shows this row
+            --// in the keybind menu without re-running the script \\--
+            local HideIcon = Library:GetCustomIcon("eye-off") or Library:GetCustomIcon("eye")
+            local ShowIcon = Library:GetCustomIcon("eye")
+
+            local KeybindsToggleHide = Library:Create("TextButton", {
+                AnchorPoint = Vector2.new(1, 0);
+                AutoButtonColor = false;
+                BackgroundTransparency = 1;
+                Position = UDim2.new(1, -2, 0, 1);
+                Size = UDim2.new(0, 15, 0, 15);
+                Text = "";
+                ZIndex = 113;
+                Parent = KeybindsToggleContainer;
+            })
+
+            Library:OnHighlight(KeybindsToggleHide, KeybindsToggleHide,
+                { TextColor3 = "AccentColor" },
+                { TextColor3 = "FontColor" }
+            )
+
+            local function UpdateHideButton()
+                if HideIcon then
+                    KeybindsToggleHide.Text = ""
+
+                    local Icon = KeybindsToggleHide:FindFirstChildOfClass("ImageLabel")
+                    if not Icon then
+                        Icon = Library:Create("ImageLabel", {
+                            BackgroundTransparency = 1;
+                            Size = UDim2.new(0.7, 0, 0.7, 0);
+                            Position = UDim2.new(0.15, 0, 0.15, 0);
+                            ZIndex = 114;
+                            Parent = KeybindsToggleHide;
+                        })
+                    end
+
+                    Icon.Image = (KeyPicker.ShowInKeybinds == false) and ShowIcon.Url or HideIcon.Url
+                    Icon.ImageRectOffset = (KeyPicker.ShowInKeybinds == false) and ShowIcon.ImageRectOffset or HideIcon.ImageRectOffset
+                    Icon.ImageRectSize = (KeyPicker.ShowInKeybinds == false) and ShowIcon.ImageRectSize or HideIcon.ImageRectSize
+                    Icon.ImageColor3 = KeyPicker.ShowInKeybinds == false and Library.FontColor or Library.OutlineColor
+                else
+                    KeybindsToggleHide.Text = KeyPicker.ShowInKeybinds == false and "[-]" or "[+]"
+                    KeybindsToggleHide.Font = Library.Font
+                    KeybindsToggleHide.TextSize = 10
+                    KeybindsToggleHide.TextColor3 = KeyPicker.ShowInKeybinds == false and Library.FontColor or Library.OutlineColor
+                end
+            end
+
+            UpdateHideButton()
+
+            Library:GiveSignal(KeybindsToggleHide.InputBegan:Connect(function(Input)
+                if Library.Unloaded then
+                    return
+                end
+
+                if (Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame()) or Input.UserInputType == Enum.UserInputType.Touch then
+                    KeyPicker:SetShowInKeybinds(not (KeyPicker.ShowInKeybinds == false))
+                    UpdateHideButton()
+
+                    if type(Library.RefreshKeybindList) == "function" then
+                        Library:RefreshKeybindList()
+                    end
+                end
+            end))
+
             function KeybindsToggle:Display(State)
                 KeybindsToggleInner.BackgroundColor3 = State and Library.AccentColor or Library.MainColor
                 KeybindsToggleInner.BorderColor3 = State and Library.AccentColorDark or Library.OutlineColor
@@ -8876,30 +8941,6 @@ function Library:CreateWindow(...)
         else
             Panel:AddLabel("Load the SaveManager addon for config settings")
         end
-
-        Panel:AddDivider()
-
-        Panel:AddToggle("Options_ShowBoundOnly", {
-            Text = "Keybind menu: show bound only";
-            Default = (Library.KeybindFilters and Library.KeybindFilters.ShowBoundOnly) or false;
-        }):OnChanged(function(Value)
-            Library.KeybindFilters = Library.KeybindFilters or {}
-            Library.KeybindFilters.ShowBoundOnly = Value
-            if type(Library.RefreshKeybindList) == "function" then Library:RefreshKeybindList() end
-            if type(Library.UpdateKeybindFrameSize) == "function" then Library:UpdateKeybindFrameSize() end
-            if type(Library.SaveKeybindFilters) == "function" then Library:SaveKeybindFilters() end
-        end)
-
-        Panel:AddToggle("Options_ShowEnabledOnly", {
-            Text = "Keybind menu: show enabled only";
-            Default = (Library.KeybindFilters and Library.KeybindFilters.ShowEnabledOnly) or false;
-        }):OnChanged(function(Value)
-            Library.KeybindFilters = Library.KeybindFilters or {}
-            Library.KeybindFilters.ShowEnabledOnly = Value
-            if type(Library.RefreshKeybindList) == "function" then Library:RefreshKeybindList() end
-            if type(Library.UpdateKeybindFrameSize) == "function" then Library:UpdateKeybindFrameSize() end
-            if type(Library.SaveKeybindFilters) == "function" then Library:SaveKeybindFilters() end
-        end)
 
         Panel:AddDivider()
 
