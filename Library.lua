@@ -923,6 +923,9 @@ function Library:AddToolTip(InfoStr, DisabledInfoStr, HoverInstance)
 end
 
 function Library:MouseIsOverFrame(Frame, Input)
+    if typeof(Frame) ~= "Instance" or not Frame.Parent then
+        return false
+    end
     local Pos = Mouse
     if Library.IsMobile and Input then 
         Pos = Input.Position
@@ -4569,7 +4572,7 @@ do
                 end
 
                 for _, Addon in next, Toggle.Addons do
-                    if Library:MouseIsOverFrame(Addon.DisplayFrame) then return false end
+                    if type(Addon) == "table" and Addon.DisplayFrame and Library:MouseIsOverFrame(Addon.DisplayFrame) then return false end
                 end
                 return true
             end
