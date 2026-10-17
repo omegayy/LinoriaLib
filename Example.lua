@@ -29,12 +29,19 @@
       https://github.com/violin-suzutsuki/LinoriaLib/blob/main/Example.lua                
 --]]
 
-local repo = "https://raw.githubusercontent.com/omegayy/LinoriaLib/main/"
+-- Where the script files load from. GitHub's CDN sometimes ignores "?v="
+-- cache-busters and serves a stale copy. If that happens, run this line
+-- first, pointing at the "builds" folder (those URLs are always fresh):
+--     getgenv().LINORIA_REPO = "https://raw.githubusercontent.com/omegayy/LinoriaLib/main/builds/"
+-- (set getgenv().LINORIA_REPO = nil later to go back to the normal folder)
+local repo = getgenv().LINORIA_REPO or "https://raw.githubusercontent.com/omegayy/LinoriaLib/main/"
 
 local Library = loadstring(game:HttpGet(repo .. "Library.lua?v=" .. tostring(tick())))()
-local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
-local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+local ThemeManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/omegayy/LinoriaLib/main/addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/omegayy/LinoriaLib/main/addons/SaveManager.lua"))()
 local ESP = loadstring(game:HttpGet(repo .. "ESP.lua?v=" .. tostring(tick())))()
+
+print("[Linoria] Example r5 loaded")
 
 
 local Options = Library.Options
