@@ -9530,6 +9530,20 @@ end
                     end
                 end)
 
+                -- The settings panel must stay ABOVE the (now raised) content so the
+                -- gear menu never opens behind the mirrored elements.
+                pcall(function()
+                    local SP = Panel.SettingsPanel
+                    if typeof(SP) == "Instance" then
+                        SP.ZIndex = SP.ZIndex + 500
+                        for _, Desc in next, SP:GetDescendants() do
+                            if Desc:IsA("GuiObject") then
+                                Desc.ZIndex = (Desc.ZIndex or 1) + 500
+                            end
+                        end
+                    end
+                end)
+
                 print("[Linoria Popout] Recorded="..#Recorded.." Mirrored="..Mirrored)
 
                 Groupbox.Controls = Panel
