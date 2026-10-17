@@ -9411,8 +9411,13 @@ end
 
                     local OrigIdx = Rec.Args[1]
 
-                    -- Unique index so the mirror never overwrites Toggles/Options
-                    if type(Args[1]) == "string" then
+                    -- Unique index so the mirror never overwrites Toggles/Options.
+                    -- ONLY for element types whose first arg is an ID (not visible text).
+                    local IdxMethods = {
+                        AddToggle = true; AddSlider = true; AddDropdown = true;
+                        AddInput = true; AddKeyPicker = true; AddColorPicker = true;
+                    }
+                    if IdxMethods[Rec.Method] and type(Args[1]) == "string" then
                         Args[1] = Args[1] .. "_popout"
                     end
 
