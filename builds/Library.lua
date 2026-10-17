@@ -10792,10 +10792,14 @@ end
                 end
 
                 if Info.Title == nil then
-                    for _, Inst in next, BoxInner:GetChildren() do
-                        if Inst:IsA("TextLabel") and Inst.Text ~= "" then
-                            Info.Title = Inst.Text
-                            break
+                    if type(self.Name) == "string" and self.Name ~= "" then
+                        Info.Title = self.Name
+                    else
+                        for _, Inst in next, BoxInner:GetChildren() do
+                            if Inst:IsA("TextLabel") and Inst.Text ~= "" then
+                                Info.Title = Inst.Text
+                                break
+                            end
                         end
                     end
                 end
@@ -10817,7 +10821,13 @@ end
                     if Saved then
                         Library:Notify("Restored layout for: " .. tostring(Panel.Name), 2)
                     else
-                        Library:Notify("No saved layout for: " .. tostring(Panel.Name), 2)
+                        local Keys = {}
+                        if typeof(Library.PopoutLayout) == "table" then
+                            for K, _ in next, Library.PopoutLayout do
+                                Keys[#Keys + 1] = tostring(K)
+                            end
+                        end
+                        Library:Notify("No saved layout for: " .. tostring(Panel.Name) .. " (have: " .. table.concat(Keys, ", ") .. ")", 4)
                     end
                 end)
 
