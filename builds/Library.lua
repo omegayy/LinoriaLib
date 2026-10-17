@@ -1888,7 +1888,7 @@ do
 
         function KeyPicker:Display(Text)
             local Modes = (KeyPicker.Data and KeyPicker.Data.Modes) or KeyPicker.Modes
-            if Modes == nil then
+            if Modes == nil or typeof(Scrolling) ~= "Instance" or not Scrolling.Parent then
                 return
             end
 
@@ -1896,7 +1896,7 @@ do
 
             local Count = 0
             for _, Item in next, Scrolling:GetChildren() do
-                if not Item:IsA("UIListLayout") then
+                if typeof(Item) == "Instance" and not Item:IsA("UIListLayout") then
                     Item:Destroy()
                 end
             end
