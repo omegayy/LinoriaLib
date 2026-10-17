@@ -9491,7 +9491,7 @@ end
                     end)
                 end
 
-                print("[Linoria Popout] Recorded="..#Recorded.." Mirrored="..Mirrored.."
+                print("[Linoria Popout] Recorded="..#Recorded.." Mirrored="..Mirrored)
 
                 Groupbox.Controls = Panel
                 Groupbox._PopoutPanel = Panel
