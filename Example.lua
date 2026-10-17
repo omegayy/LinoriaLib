@@ -6,7 +6,7 @@
 -- through it from top to bottom!
 --
 -- Loadstring (to use in your executor):
--- loadstring(game:HttpGet(""https://raw.githubusercontent.com/omegayy/LinoriaLib/main/Example.lua""))()
+-- loadstring(game:HttpGet("https://raw.githubusercontent.com/omegayy/LinoriaLib/main/Example.lua?v=" .. tostring(tick())))()
 -- ============================================
 --[[
                                               _                                 
