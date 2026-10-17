@@ -1954,6 +1954,10 @@ do
                     if type(Library.RefreshKeybindList) == "function" then
                         Library:RefreshKeybindList()
                     end
+
+                    if type(Library.SaveKeybindFilters) == "function" then
+                        Library:SaveKeybindFilters()
+                    end
                 end
             end)
         end
@@ -7919,6 +7923,24 @@ do
             return
         end
 
+        Library.KeybindFilters = Library.KeybindFilters or {}
+
+        --// Persist per-keybind visibility (ShowInKeybinds) \\--
+        Library.KeybindFilters.HiddenKeybinds = Library.KeybindFilters.HiddenKeybinds or {}
+
+        for _, Option in next, Options do
+            if type(Option) == "table" and Option.Type == "KeyPicker" then
+                local Key = Option.Text
+                if type(Key) == "string" and Key ~= "" then
+                    Library.KeybindFilters.HiddenKeybinds[Key] = (Option.ShowInKeybinds == false)
+                end
+            end
+        end
+
+        --// Persist transparency settings \\--
+        Library.KeybindFilters.KeybindTransparency = Library.KeybindTransparency
+        Library.KeybindFilters.PopoutTransparency = Library.PopoutTransparency
+
         local Ok, Encoded = pcall(function()
             return FilterHttp:JSONEncode(Library.KeybindFilters or {})
         end)
@@ -7949,7 +7971,33 @@ do
             Library.KeybindFilters = {
                 ShowBoundOnly = Data.ShowBoundOnly == true;
                 ShowEnabledOnly = Data.ShowEnabledOnly == true;
+                HiddenKeybinds = (typeof(Data.HiddenKeybinds) == "table" and Data.HiddenKeybinds) or {};
+                KeybindTransparency = (typeof(Data.KeybindTransparency) == "number" and Data.KeybindTransparency) or Library.KeybindTransparency;
+                PopoutTransparency = (typeof(Data.PopoutTransparency) == "number" and Data.PopoutTransparency) or Library.PopoutTransparency;
             }
+
+            --// Apply per-keybind visibility \\--
+            for _, Option in next, Options do
+                if type(Option) == "table" and Option.Type == "KeyPicker" then
+                    local Key = Option.Text
+                    if type(Key) == "string" and Key ~= "" and Library.KeybindFilters.HiddenKeybinds[Key] == true then
+                        Option.ShowInKeybinds = false
+                    end
+                end
+            end
+
+            --// Apply transparency \\--
+            Library.KeybindTransparency = Library.KeybindFilters.KeybindTransparency
+            Library.PopoutTransparency = Library.KeybindFilters.PopoutTransparency
+
+            pcall(function()
+                if Library.KeybindFrame then
+                    Library.KeybindFrame.BackgroundTransparency = Library.KeybindTransparency
+                end
+                if Library.KeybindInner then
+                    Library.KeybindInner.BackgroundTransparency = Library.KeybindTransparency
+                end
+            end)
 
             Library:RefreshKeybindList()
         end
@@ -8836,6 +8884,9 @@ function Library:CreateWindow(...)
             pcall(function()
                 Panel:SetTransparency(Library.PopoutTransparency)
             end)
+            if type(Library.SaveKeybindFilters) == "function" then
+                Library:SaveKeybindFilters()
+            end
         end)
 
         Panel:AddDivider()
@@ -8855,6 +8906,9 @@ function Library:CreateWindow(...)
                     Library.KeybindInner.BackgroundTransparency = Library.KeybindTransparency
                 end
             end)
+            if type(Library.SaveKeybindFilters) == "function" then
+                Library:SaveKeybindFilters()
+            end
         end)
 
         Panel:AddDivider()
