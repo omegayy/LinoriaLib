@@ -7656,6 +7656,7 @@ end
 do
     local KeybindOuter = Library:Create("Frame", {
         AnchorPoint = Vector2.new(0, 0.5);
+        BackgroundColor3 = Library.BackgroundColor;
         BorderColor3 = Color3.new(0, 0, 0);
         Position = UDim2.new(0, 10, 0.5, 0);
         Size = UDim2.new(0, 210, 0, 20);
@@ -7663,6 +7664,8 @@ do
         ZIndex = 100;
         Parent = ScreenGui;
     })
+
+    Library:AddToRegistry(KeybindOuter, { BackgroundColor3 = "BackgroundColor" })
 
     local KeybindInner = Library:Create("Frame", {
         BackgroundColor3 = Library.MainColor;
