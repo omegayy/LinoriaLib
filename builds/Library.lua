@@ -6929,6 +6929,7 @@ do
             Side = 1;
             Visible = if typeof(Info.Visible) == "boolean" then Info.Visible else false;
             ShowWhenMenuClosed = if typeof(Info.ShowWhenMenuClosed) == "boolean" then Info.ShowWhenMenuClosed else false;
+            ShowWhenTab = typeof(Info.ShowWhenTab) == "string" and Info.ShowWhenTab or nil;
             Resizable = if typeof(Info.Resizable) == "boolean" then Info.Resizable else true;
             Locked = false;
             Destroyed = false;
@@ -7110,7 +7111,7 @@ do
         local SettingsOuter = Library:Create("Frame", {
             AnchorPoint = Vector2.new(1, 0);
             Position = UDim2.new(1, -3, 0, 22);
-            Size = UDim2.fromOffset(190, 144);
+            Size = UDim2.fromOffset(190, 162);
             BackgroundColor3 = Color3.new(0, 0, 0);
             BorderColor3 = Color3.new(0, 0, 0);
             Visible = false;
@@ -7228,6 +7229,81 @@ do
             Popout:Save()
         end)
 
+        --// Show this pop-out only when a specific tab is open \\--
+        do
+            local TabRow = Library:Create("TextButton", {
+                AutoButtonColor = false;
+                BackgroundColor3 = Library.MainColor;
+                BorderColor3 = Library.OutlineColor;
+                BorderMode = Enum.BorderMode.Middle;
+                LayoutOrder = NextOrder();
+                Size = UDim2.new(1, 0, 0, 18);
+                Font = Library.Font;
+                Text = "Show on tab: Any";
+                TextColor3 = Library.FontColor;
+                TextSize = 13;
+                ZIndex = 212;
+                Parent = SettingsInner;
+            })
+
+            Library:ApplyTextStroke(TabRow)
+            Library:AddToRegistry(TabRow, {
+                BackgroundColor3 = "MainColor";
+                BorderColor3 = "OutlineColor";
+                TextColor3 = "FontColor";
+            })
+
+            local function TabNames()
+                local Names = { "Any" }
+                if Library.Window and Library.Window.Tabs then
+                    for Name, _ in next, Library.Window.Tabs do
+                        Names[#Names + 1] = Name
+                    end
+                end
+                return Names
+            end
+
+            local function UpdateTabRow()
+                local Current = Popout.ShowWhenTab
+                if type(Current) ~= "string" or Current == "" then
+                    Current = "Any"
+                end
+
+                TabRow.Text = "Show on tab: " .. Current
+            end
+
+            UpdateTabRow()
+
+            TabRow.MouseButton1Click:Connect(function()
+                local Names = TabNames()
+                local Current = Popout.ShowWhenTab
+                if type(Current) ~= "string" or Current == "" then
+                    Current = "Any"
+                end
+
+                local Idx = 1
+                for i, Name in next, Names do
+                    if Name == Current then
+                        Idx = i
+                        break
+                    end
+                end
+
+                Idx = (Idx % #Names) + 1
+                local Next = Names[Idx]
+
+                if Next == "Any" then
+                    Popout.ShowWhenTab = nil
+                else
+                    Popout.ShowWhenTab = Next
+                end
+
+                UpdateTabRow()
+                Popout:UpdateVisibility()
+                Popout:Save()
+            end)
+        end
+
         CreateSettingRow("Resizable", function()
             return Popout.Resizable
         end, function()
@@ -7323,6 +7399,7 @@ do
                 Size = { Outer.Size.X.Offset, Outer.Size.Y.Offset };
                 Visible = Popout.Visible;
                 ShowWhenMenuClosed = Popout.ShowWhenMenuClosed;
+                ShowWhenTab = Popout.ShowWhenTab;
                 Keybind = Popout.Keybind;
                 Transparency = Popout.Transparency;
                 Resizable = Popout.Resizable;
@@ -7351,6 +7428,13 @@ do
 
             if not Popout.ShowWhenMenuClosed and Library.Toggled ~= true then
                 Show = false
+            end
+
+            --// Only show when a specific tab is active (if set) \\--
+            if Show and type(Popout.ShowWhenTab) == "string" and Popout.ShowWhenTab ~= "" then
+                if Library.ActiveTab ~= Popout.ShowWhenTab then
+                    Show = false
+                end
             end
 
             Outer.Visible = Show and true or false
@@ -7385,6 +7469,12 @@ do
 
             if typeof(Saved.ShowWhenMenuClosed) == "boolean" then
                 Popout.ShowWhenMenuClosed = Saved.ShowWhenMenuClosed
+            end
+
+            if typeof(Saved.ShowWhenTab) == "string" then
+                Popout.ShowWhenTab = Saved.ShowWhenTab
+            elseif Saved.ShowWhenTab == nil then
+                Popout.ShowWhenTab = nil
             end
 
             if typeof(Saved.Keybind) == "string" then
@@ -10148,6 +10238,8 @@ end
             TabFrame.Visible = true
 
             Tab:Resize()
+
+            Library:UpdatePopouts()
         end
         Tab.Show = Tab.ShowTab
 
