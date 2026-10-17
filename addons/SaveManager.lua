@@ -243,6 +243,17 @@ local SaveManager = {} do
             table.insert(data.objects, self.Parser[option.Type].Save(idx, option))
         end
 
+        --// Persist pop-out window layouts (position, size, transparency, etc.) \\--
+        pcall(function()
+            if type(self.Library.SavePopouts) == "function" then
+                self.Library:SavePopouts()
+            end
+        end)
+
+        if typeof(self.Library.PopoutLayout) == "table" then
+            data.popouts = self.Library.PopoutLayout
+        end
+
         local success, encoded = pcall(HttpService.JSONEncode, HttpService, data)
         if not success then
             return false, 'failed to encode data'
@@ -282,6 +293,16 @@ local SaveManager = {} do
             if self.Ignore[option.idx] then continue end
 
             task.spawn(self.Parser[option.type].Load, option.idx, option) -- task.spawn() so the config loading wont get stuck.
+        end
+
+        --// Restore pop-out window layouts (position, size, transparency, etc.) \\--
+        if typeof(decoded.popouts) == "table" then
+            pcall(function()
+                self.Library.PopoutLayout = decoded.popouts
+                if type(self.Library.ApplyPopoutLayouts) == "function" then
+                    self.Library:ApplyPopoutLayouts()
+                end
+            end)
         end
 
         return true

@@ -1887,7 +1887,7 @@ do
             end)
         end
 
-        --// "Show in keybind UI" toggle (bool) — same right-click menu as the modes \\--
+        --// "Show in keybind UI" toggle (bool) â€” same right-click menu as the modes \\--
         do
             local ShowInner = Library:Create("Frame", {
                 BackgroundColor3 = Library.BackgroundColor;
@@ -6800,6 +6800,22 @@ do
         end
     end
 
+    function Library:ApplyPopoutLayouts()
+        if typeof(Library.PopoutLayout) ~= "table" then
+            return
+        end
+
+        for _, Popout in ipairs(Library.Popouts) do
+            local Saved = Library.PopoutLayout[Popout.Name]
+
+            if typeof(Saved) == "table" and type(Popout.ApplyLayout) == "function" then
+                pcall(function()
+                    Popout:ApplyLayout(Saved)
+                end)
+            end
+        end
+    end
+
     function Library:UpdatePopouts()
         for _, Popout in ipairs(Library.Popouts) do
             Popout:UpdateVisibility()
@@ -7449,10 +7465,11 @@ do
             Library:SavePopouts()
         end
 
-        Popout.DefaultPosition = Outer.Position
-        Popout.DefaultSize = Outer.Size
+        function Popout:ApplyLayout(Saved)
+            if typeof(Saved) ~= "table" then
+                return
+            end
 
-        if Saved then
             local Position = Saved.Position
             local Size = Saved.Size
 
@@ -7462,10 +7479,6 @@ do
 
             if typeof(Size) == "table" and #Size >= 2 then
                 Outer.Size = UDim2.fromOffset(Size[1], Size[2])
-            end
-
-            if typeof(Saved.Visible) == "boolean" then
-                Popout.Visible = Saved.Visible
             end
 
             if typeof(Saved.ShowWhenMenuClosed) == "boolean" then
@@ -7485,6 +7498,11 @@ do
 
             if typeof(Saved.Transparency) == "number" then
                 Popout.Transparency = Saved.Transparency
+                if Popout.Transparency > 0 then
+                    pcall(function()
+                        Popout:SetTransparency(Popout.Transparency)
+                    end)
+                end
             end
 
             if typeof(Saved.Resizable) == "boolean" then
@@ -7494,6 +7512,18 @@ do
             if typeof(Saved.Locked) == "boolean" then
                 Popout.Locked = Saved.Locked
             end
+
+            --// Only apply Visible if the popout is not driven by a toggle \\--
+            if typeof(Saved.Visible) == "boolean" and not Popout.LinkedToggle then
+                Popout.Visible = Saved.Visible
+            end
+        end
+
+        Popout.DefaultPosition = Outer.Position
+        Popout.DefaultSize = Outer.Size
+
+        if Saved then
+            Popout:ApplyLayout(Saved)
         end
 
         function Popout:SetVisible(Value)
@@ -8027,7 +8057,7 @@ do
         UpdateTransRow()
     end
 
-    --// Settings wheel — shared helper so it matches the popout/window wheels \\--
+    --// Settings wheel â€” shared helper so it matches the popout/window wheels \\--
     local SettingsButton = Library:CreateSettingsWheelButton(KeybindInner, {
         AnchorPoint = Vector2.new(0, 0);
         Position = UDim2.new(1, -21, 0, 1);
@@ -8792,7 +8822,7 @@ function Library:CreateWindow(...)
         return Panel
     end
 
-    --// Options gear (top right corner of the window) — same shared wheel style \\--
+    --// Options gear (top right corner of the window) â€” same shared wheel style \\--
     local OptionsButton = Library:CreateSettingsWheelButton(Inner, {
         AnchorPoint = Vector2.new(1, 0);
         Position = UDim2.new(1, -159, 0, 3);
@@ -9049,7 +9079,7 @@ function Library:CreateWindow(...)
 
         Panel:AddDivider()
 
-        -- Menu keybind (UI toggle key) — lives in the settings wheel now
+        -- Menu keybind (UI toggle key) â€” lives in the settings wheel now
         Panel:AddLabel("Menu keybind"):AddKeyPicker("MenuKeybind", { Default = "End", NoUI = true, Text = "Menu keybind" })
         if Options.MenuKeybind then
             Options.MenuKeybind:OnChanged(function()
