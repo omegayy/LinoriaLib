@@ -285,6 +285,10 @@ local Library = {
     NotifySide = "Left";
     ShowCustomCursor = true;
     ShowToggleFrameInKeybinds = true;
+    KeybindFilters = {
+        ShowBoundOnly = false;
+        ShowEnabledOnly = false;
+    };
     NotifyOnError = false; -- true = Library:Notify for SafeCallback (still warns in the developer console)
     MascotLabel = nil;
     MascotURL = nil;
@@ -1742,6 +1746,11 @@ do
             end))
 
             KeybindsToggle.Loaded = true
+
+            if not Info.NoUI then
+                KeyPicker.KeybindToggle = KeybindsToggle
+                KeyPicker.KeybindContainer = KeybindsToggleContainer
+            end
         end
 
         local ModeSelectOuter = Library:Create("Frame", {
@@ -1895,29 +1904,43 @@ do
             if KeybindsToggle.Loaded then
                 KeybindsToggle:SetNormal(not ShowToggle)
 
-                KeybindsToggle:SetVisibility(true)
+                KeybindsToggle:SetVisibility(KeyPicker:ShouldShowInKeybinds())
                 KeybindsToggle:SetText(string.format("[%s] %s (%s)", tostring(KeyPicker.DisplayValue), Info.Text, KeyPicker.Mode))
                 KeybindsToggle:Display(State)
             end
 
-            local YSize = 0
-            local XSize = 0
+            Library:UpdateKeybindFrameSize()
+            UpdateMenuOuterPos()
+        end
 
-            for _, Frame in next, Library.KeybindContainer:GetChildren() do
-                if Frame:IsA("Frame") and Frame.Visible then
-                    YSize = YSize + 18
-                    local Label = Frame:FindFirstChild("TextLabel", true)
-                    if not Label then continue end
-                    
-                    local LabelSize = Label.TextBounds.X + 20
-                    if (LabelSize > XSize) then
-                        XSize = LabelSize
-                    end
-                end
+        --// Is a real key actually bound to this keybind?
+        function KeyPicker:IsBound()
+            local Value = KeyPicker.Value
+            return Value ~= nil and Value ~= "None" and Value ~= "Unknown"
+        end
+
+        --// Is the feature this keybind controls currently switched on?
+        function KeyPicker:IsEnabled()
+            if KeyPicker.Mode == "Always" then
+                return true
             end
 
-            Library.KeybindFrame.Size = UDim2.new(0, math.max(XSize + 10, 220), 0, (YSize + 23 + 6) * DPIScale)
-            UpdateMenuOuterPos()
+            return KeyPicker.Toggled == true
+        end
+
+        --// Should this keybind be shown in the keybind menu? (respects the filter settings)
+        function KeyPicker:ShouldShowInKeybinds()
+            local Filters = Library.KeybindFilters or {}
+
+            if Filters.ShowBoundOnly and not KeyPicker:IsBound() then
+                return false
+            end
+
+            if Filters.ShowEnabledOnly and not KeyPicker:IsEnabled() then
+                return false
+            end
+
+            return true
         end
 
         function KeyPicker:GetState()
@@ -7278,6 +7301,269 @@ do
     Library.KeybindFrame = KeybindOuter
     Library.KeybindContainer = KeybindContainer
     Library:MakeDraggable(KeybindOuter)
+
+    --// Keybind filters popup (opened with the little settings wheel) \\--
+    local KeybindSettingsOpen = false
+
+    local SettingsPopup = Library:Create("Frame", {
+        BackgroundColor3 = Library.BackgroundColor;
+        BorderColor3 = Library.OutlineColor;
+        BorderMode = Enum.BorderMode.Inset;
+        AnchorPoint = Vector2.new(1, 0);
+        Position = UDim2.new(1, -2, 0, 21);
+        Size = UDim2.new(0, 158, 0, 62);
+        Visible = false;
+        ZIndex = 300;
+        Parent = KeybindInner;
+    })
+
+    Library:AddToRegistry(SettingsPopup, {
+        BackgroundColor3 = "BackgroundColor";
+        BorderColor3 = "OutlineColor";
+    }, true)
+
+    local SettingsStrip = Library:Create("Frame", {
+        BackgroundColor3 = Library.AccentColor;
+        BorderSizePixel = 0;
+        Size = UDim2.new(1, 0, 0, 2);
+        ZIndex = 301;
+        Parent = SettingsPopup;
+    })
+
+    Library:AddToRegistry(SettingsStrip, { BackgroundColor3 = "AccentColor" }, true)
+
+    Library:CreateLabel({
+        BackgroundTransparency = 1;
+        Position = UDim2.fromOffset(6, 4);
+        Size = UDim2.new(1, -12, 0, 16);
+        TextSize = 14;
+        Text = "Keybind Filter";
+        TextXAlignment = Enum.TextXAlignment.Left;
+        ZIndex = 302;
+        Parent = SettingsPopup;
+    })
+
+    local function AddKeybindFilterRow(Text, Order, Setter, Getter)
+        local Row = Library:Create("Frame", {
+            BackgroundTransparency = 1;
+            Position = UDim2.fromOffset(6, 22 + (Order * 18));
+            Size = UDim2.new(1, -12, 0, 16);
+            ZIndex = 302;
+            Parent = SettingsPopup;
+        })
+
+        local BoxOuter = Library:Create("Frame", {
+            BackgroundColor3 = Color3.new(0, 0, 0);
+            BorderColor3 = Color3.new(0, 0, 0);
+            Size = UDim2.new(0, 13, 0, 13);
+            Position = UDim2.new(0, 0, 0, 1);
+            ZIndex = 303;
+            Parent = Row;
+        })
+
+        Library:AddToRegistry(BoxOuter, { BorderColor3 = "Black" })
+
+        local BoxInner = Library:Create("Frame", {
+            BackgroundColor3 = Library.MainColor;
+            BorderColor3 = Library.OutlineColor;
+            BorderMode = Enum.BorderMode.Inset;
+            Size = UDim2.new(1, 0, 1, 0);
+            ZIndex = 304;
+            Parent = BoxOuter;
+        })
+
+        Library:AddToRegistry(BoxInner, {
+            BackgroundColor3 = "MainColor";
+            BorderColor3 = "OutlineColor";
+        })
+
+        local RowLabel = Library:CreateLabel({
+            BackgroundTransparency = 1;
+            Position = UDim2.fromOffset(19, -1);
+            Size = UDim2.new(1, -19, 1, 0);
+            TextSize = 14;
+            Text = Text;
+            TextXAlignment = Enum.TextXAlignment.Left;
+            ZIndex = 304;
+            Parent = Row;
+        })
+
+        local Region = Library:Create("Frame", {
+            BackgroundTransparency = 1;
+            Size = UDim2.new(1, 0, 1, 0);
+            ZIndex = 305;
+            Parent = Row;
+        })
+
+        Library:OnHighlight(Region, BoxOuter,
+            { BorderColor3 = "AccentColor" },
+            { BorderColor3 = "Black" },
+            function()
+                return true
+            end
+        )
+
+        local function Refresh()
+            local On = Getter()
+
+            BoxInner.BackgroundColor3 = On and Library.AccentColor or Library.MainColor
+            BoxInner.BorderColor3 = On and Library.AccentColorDark or Library.OutlineColor
+            RowLabel.TextColor3 = On and Library.AccentColor or Library.FontColor
+
+            Library.RegistryMap[BoxInner].Properties.BackgroundColor3 = On and "AccentColor" or "MainColor"
+            Library.RegistryMap[BoxInner].Properties.BorderColor3 = On and "AccentColorDark" or "OutlineColor"
+            Library.RegistryMap[RowLabel].Properties.TextColor3 = On and "AccentColor" or "FontColor"
+        end
+
+        Library:GiveSignal(Region.InputBegan:Connect(function(Input)
+            if Library.Unloaded then
+                return
+            end
+
+            if (Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame()) or Input.UserInputType == Enum.UserInputType.Touch then
+                Setter(not Getter())
+                Refresh()
+                Library:RefreshKeybindList()
+            end
+        end))
+
+        Refresh()
+    end
+
+    AddKeybindFilterRow("Show bound only", 0,
+        function(Value) Library.KeybindFilters.ShowBoundOnly = Value end,
+        function() return Library.KeybindFilters.ShowBoundOnly end
+    )
+
+    AddKeybindFilterRow("Show enabled only", 1,
+        function(Value) Library.KeybindFilters.ShowEnabledOnly = Value end,
+        function() return Library.KeybindFilters.ShowEnabledOnly end
+    )
+
+    --// The little settings wheel (drawn with Frames so it always renders) \\--
+    local SettingsButton = Library:Create("TextButton", {
+        BackgroundTransparency = 1;
+        Text = "";
+        AutoButtonColor = false;
+        Size = UDim2.fromOffset(18, 18);
+        Position = UDim2.new(1, -21, 0, 1);
+        ZIndex = 106;
+        Parent = KeybindInner;
+    })
+
+    local Gear = Library:Create("Frame", {
+        BackgroundTransparency = 1;
+        AnchorPoint = Vector2.new(0.5, 0.5);
+        Position = UDim2.fromScale(0.5, 0.5);
+        Size = UDim2.fromOffset(14, 14);
+        ZIndex = 106;
+        Parent = SettingsButton;
+    })
+
+    local GearCircle = Library:Create("Frame", {
+        BackgroundColor3 = Library.FontColor;
+        BorderSizePixel = 0;
+        AnchorPoint = Vector2.new(0.5, 0.5);
+        Position = UDim2.fromScale(0.5, 0.5);
+        Size = UDim2.fromOffset(11, 11);
+        ZIndex = 106;
+        Parent = Gear;
+    })
+
+    Library:Create("UICorner", { CornerRadius = UDim.new(0.5, 0), Parent = GearCircle })
+
+    for i = 0, 7 do
+        local Angle = math.rad(i * 45)
+
+        local Tooth = Library:Create("Frame", {
+            BackgroundColor3 = Library.FontColor;
+            BorderSizePixel = 0;
+            AnchorPoint = Vector2.new(0.5, 0.5);
+            Position = UDim2.new(0.5, math.cos(Angle) * 5.5, 0.5, math.sin(Angle) * 5.5);
+            Size = UDim2.fromOffset(4, 4);
+            ZIndex = 106;
+            Parent = Gear;
+        })
+
+        Library:Create("UICorner", { CornerRadius = UDim.new(0.5, 0), Parent = Tooth })
+    end
+
+    local GearHole = Library:Create("Frame", {
+        BackgroundColor3 = Library.MainColor;
+        BorderSizePixel = 0;
+        AnchorPoint = Vector2.new(0.5, 0.5);
+        Position = UDim2.fromScale(0.5, 0.5);
+        Size = UDim2.fromOffset(4, 4);
+        ZIndex = 107;
+        Parent = Gear;
+    })
+
+    Library:Create("UICorner", { CornerRadius = UDim.new(0.5, 0), Parent = GearHole })
+
+    table.insert(Library.DragBlockers, SettingsButton)
+    table.insert(Library.DragBlockers, SettingsPopup)
+
+    local function SetKeybindSettingsOpen(Open)
+        KeybindSettingsOpen = Open
+        SettingsPopup.Visible = Open
+    end
+
+    SettingsButton.MouseButton1Click:Connect(function()
+        if Library.Unloaded then
+            return
+        end
+
+        SetKeybindSettingsOpen(not KeybindSettingsOpen)
+    end)
+
+    Library:GiveSignal(InputService.InputBegan:Connect(function(Input)
+        if Library.Unloaded then
+            return
+        end
+
+        if KeybindSettingsOpen and Input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if not Library:MouseIsOverFrame(SettingsPopup, Input) and not Library:MouseIsOverFrame(SettingsButton, Input) then
+                SetKeybindSettingsOpen(false)
+            end
+        end
+    end))
+
+    --// Recalculates the keybind menu size based on the entries that are currently visible \\--
+    function Library:UpdateKeybindFrameSize()
+        if not Library.KeybindContainer or not Library.KeybindFrame then
+            return
+        end
+
+        local YSize = 0
+        local XSize = 0
+
+        for _, Frame in next, Library.KeybindContainer:GetChildren() do
+            if Frame:IsA("Frame") and Frame.Visible then
+                YSize = YSize + 18
+
+                local Label = Frame:FindFirstChild("TextLabel", true)
+                if Label then
+                    local LabelSize = Label.TextBounds.X + 20
+                    if LabelSize > XSize then
+                        XSize = LabelSize
+                    end
+                end
+            end
+        end
+
+        Library.KeybindFrame.Size = UDim2.new(0, math.max(XSize + 10, 220), 0, (YSize + 23 + 6) * DPIScale)
+    end
+
+    --// Re-applies the "show bound only" / "show enabled only" filters to every keybind \\--
+    function Library:RefreshKeybindList()
+        for _, Option in next, Options do
+            if type(Option) == "table" and Option.Type == "KeyPicker" and Option.KeybindToggle then
+                Option.KeybindToggle:SetVisibility(Option:ShouldShowInKeybinds())
+            end
+        end
+
+        Library:UpdateKeybindFrameSize()
+    end
 end
 
 --// Watermark \\--

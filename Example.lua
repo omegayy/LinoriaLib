@@ -1,3 +1,13 @@
+-- ============================================
+-- LINORIA LIB EXAMPLE (Beginner Friendly)
+-- ============================================
+-- This file shows you how to use LinoriaLib.
+-- Everything is clearly labeled. Just read
+-- through it from top to bottom!
+--
+-- Loadstring (to use in your executor):
+-- loadstring(game:HttpGet(""https://raw.githubusercontent.com/omegayy/LinoriaLib/main/Example.lua""))()
+-- ============================================
 --[[
                                               _                                 
                     __      ____ _ _ __ _ __ (_)_ __   __ _                     
@@ -24,6 +34,8 @@ local repo = "https://raw.githubusercontent.com/omegayy/LinoriaLib/main/"
 local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
 local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
 local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+local ESP = loadstring(game:HttpGet(repo .. "ESP.lua"))()
+
 
 local Options = Library.Options
 local Toggles = Library.Toggles
@@ -828,9 +840,9 @@ MiscBox:AddButton({
 MiscBox:AddButton({
 	Text = "Open a dialog",
 	Func = function()
-		Window:AddDialog("ExampleDialog", {
+			local Dialog = Window:AddDialog("ExampleDialog", {
 			Title = "Delete everything?",
-			Description = "Dialogs support footer buttons with variants, ordering and wait timers.",
+			Description = "Dialogs support footer buttons with variants, ordering and wait timers. They can also contain UI elements!",
 			OutsideClickDismiss = true,
 			FooterButtons = {
 				{ Id = "Cancel", Title = "Cancel", Variant = "Secondary", Order = 1 },
@@ -842,261 +854,103 @@ MiscBox:AddButton({
 				end },
 			},
 		})
+
+		-- Add elements inside the dialog to show how they work!
+		Dialog:AddToggle("DialogToggle", { Text = "Enable extra options", Default = false })
+		Dialog:AddLabel("This is a label inside the dialog.")
+		Dialog:AddInput("DialogInput", { Text = "Enter something...", Default = "" })
+		Dialog:AddSlider("DialogSlider", { Text = "Dialog Slider", Default = 50, Min = 0, Max = 100, Rounding = 0 })
+		Dialog:AddDropdown("DialogDropdown", { Text = "Choose an option", Values = { "Option 1", "Option 2", "Option 3" }, Default = 1 })
 	end,
 })
 
 -- =====================================================================
--- ESP PREVIEW (custom UI embedded with AddUIPassthrough)
+-- ESP PREVIEW (using the ESP plugin)
 -- =====================================================================
--- An ESP "preview" is totally possible. Here we build a mock ESP out of plain
--- Frames over a 2D dummy, then embed it into the menu with
--- Groupbox:AddUIPassthrough. The options underneath update it live.
--- The same trick works for anything custom (graphs, player lists, crosshairs..)
+-- This shows how to use the ESP plugin's built-in 3D preview.
+-- The same ESP module works for live players AND for UI previews.
 local EspGroup = FeaturesTab:AddRightGroupbox("ESP Preview")
 
-local function BuildESPPreview()
-	local Root = Instance.new("Frame")
-	Root.BackgroundColor3 = Color3.fromRGB(18, 18, 21)
-	Root.BorderSizePixel = 0
-	Root.Size = UDim2.fromScale(1, 1)
-
-	local Scene = Instance.new("Frame")
-	Scene.BackgroundTransparency = 1
-	Scene.Size = UDim2.fromScale(1, 1)
-	Scene.Parent = Root
-
-	-- 2D "dummy" silhouette
-	local Dummy = Instance.new("Frame")
-	Dummy.BackgroundTransparency = 1
-	Dummy.AnchorPoint = Vector2.new(0.5, 0.5)
-	Dummy.Position = UDim2.fromScale(0.5, 0.5)
-	Dummy.Size = UDim2.fromScale(0.4, 0.6)
-	Dummy.Parent = Scene
-
-	local BodyColor = Color3.fromRGB(72, 72, 80)
-
-	local function BodyPart(Size, Position, Roundness)
-		local Part = Instance.new("Frame")
-		Part.BackgroundColor3 = BodyColor
-		Part.BorderSizePixel = 0
-		Part.AnchorPoint = Vector2.new(0.5, 0.5)
-		Part.Size = Size
-		Part.Position = Position
-		Part.Parent = Dummy
-
-		if Roundness then
-			local Corner = Instance.new("UICorner")
-			Corner.CornerRadius = UDim.new(Roundness, 0)
-			Corner.Parent = Part
-		end
-
-		return Part
-	end
-
-	BodyPart(UDim2.fromScale(0.44, 0.2), UDim2.fromScale(0.5, 0.1), 0.5) -- head
-	BodyPart(UDim2.fromScale(0.62, 0.3), UDim2.fromScale(0.5, 0.36))     -- torso
-	BodyPart(UDim2.fromScale(0.16, 0.3), UDim2.fromScale(0.12, 0.36))    -- left arm
-	BodyPart(UDim2.fromScale(0.16, 0.3), UDim2.fromScale(0.88, 0.36))    -- right arm
-	BodyPart(UDim2.fromScale(0.22, 0.34), UDim2.fromScale(0.37, 0.68))   -- left leg
-	BodyPart(UDim2.fromScale(0.22, 0.34), UDim2.fromScale(0.63, 0.68))   -- right leg
-
-	-- ESP box (4 lines + optional fill). Parented to the dummy so it scales too.
-	local Box = Instance.new("Frame")
-	Box.BackgroundTransparency = 1
-	Box.AnchorPoint = Vector2.new(0.5, 0.5)
-	Box.Position = UDim2.fromScale(0.5, 0.5)
-	Box.Size = UDim2.fromScale(1.5, 1.2)
-	Box.Parent = Dummy
-
-	local Fill = Instance.new("Frame")
-	Fill.BackgroundColor3 = Color3.fromRGB(235, 75, 75)
-	Fill.BackgroundTransparency = 0.85
-	Fill.BorderSizePixel = 0
-	Fill.Size = UDim2.fromScale(1, 1)
-	Fill.Parent = Box
-
-	local function BoxLine(Size, Position)
-		local Line = Instance.new("Frame")
-		Line.BackgroundColor3 = Color3.fromRGB(235, 75, 75)
-		Line.BorderSizePixel = 0
-		Line.AnchorPoint = Vector2.new(0.5, 0.5)
-		Line.Size = Size
-		Line.Position = Position
-		Line.Parent = Box
-		return Line
-	end
-
-	local Lines = {
-		BoxLine(UDim2.new(1, 2, 0, 2), UDim2.new(0.5, 0, 0, 0)),
-		BoxLine(UDim2.new(1, 2, 0, 2), UDim2.new(0.5, 0, 1, 0)),
-		BoxLine(UDim2.new(0, 2, 1, 2), UDim2.new(0, 0, 0.5, 0)),
-		BoxLine(UDim2.new(0, 2, 1, 2), UDim2.new(1, 0, 0.5, 0)),
-	}
-
-	-- health bar on the left of the box
-	local HealthBg = Instance.new("Frame")
-	HealthBg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	HealthBg.BackgroundTransparency = 0.4
-	HealthBg.BorderSizePixel = 0
-	HealthBg.AnchorPoint = Vector2.new(1, 0)
-	HealthBg.Position = UDim2.new(0, -5, 0, 0)
-	HealthBg.Size = UDim2.new(0, 4, 1, 0)
-	HealthBg.Parent = Box
-
-	local HealthFill = Instance.new("Frame")
-	HealthFill.BackgroundColor3 = Color3.fromRGB(80, 220, 100)
-	HealthFill.BorderSizePixel = 0
-	HealthFill.AnchorPoint = Vector2.new(0, 1)
-	HealthFill.Position = UDim2.fromScale(0, 1)
-	HealthFill.Size = UDim2.fromScale(1, 0.72)
-	HealthFill.Parent = HealthBg
-
-	local Name = Instance.new("TextLabel")
-	Name.BackgroundTransparency = 1
-	Name.AnchorPoint = Vector2.new(0.5, 1)
-	Name.Position = UDim2.new(0.5, 0, 0, -3)
-	Name.Size = UDim2.new(1, 0, 0, 14)
-	Name.Font = Enum.Font.GothamBold
-	Name.Text = "Player"
-	Name.TextColor3 = Color3.fromRGB(255, 255, 255)
-	Name.TextSize = 13
-	Name.TextStrokeTransparency = 0.5
-	Name.TextXAlignment = Enum.TextXAlignment.Center
-	Name.Parent = Box
-
-	local Distance = Instance.new("TextLabel")
-	Distance.BackgroundTransparency = 1
-	Distance.AnchorPoint = Vector2.new(0.5, 0)
-	Distance.Position = UDim2.new(0.5, 0, 1, 3)
-	Distance.Size = UDim2.new(1, 0, 0, 14)
-	Distance.Font = Enum.Font.Gotham
-	Distance.Text = "[128 studs]"
-	Distance.TextColor3 = Color3.fromRGB(235, 235, 235)
-	Distance.TextSize = 12
-	Distance.TextStrokeTransparency = 0.5
-	Distance.TextXAlignment = Enum.TextXAlignment.Center
-	Distance.Parent = Box
-
-	-- tracer (drawn in scene space, kept aligned after layout)
-	local Tracer = Instance.new("Frame")
-	Tracer.BackgroundColor3 = Color3.fromRGB(235, 75, 75)
-	Tracer.BorderSizePixel = 0
-	Tracer.AnchorPoint = Vector2.new(0.5, 0.5)
-	Tracer.Size = UDim2.fromOffset(0, 1)
-	Tracer.Visible = false
-	Tracer.Parent = Scene
-
-	local Preview = {
-		Root = Root;
-		Scene = Scene;
-		Dummy = Dummy;
-		Box = Box;
-		Fill = Fill;
-		Lines = Lines;
-		HealthBg = HealthBg;
-		HealthFill = HealthFill;
-		Name = Name;
-		Distance = Distance;
-		Tracer = Tracer;
-	}
-
-	function Preview:UpdateTracer()
-		local Origin = Vector2.new(Scene.AbsoluteSize.X * 0.5, Scene.AbsoluteSize.Y)
-		local Target = Vector2.new(
-			Box.AbsolutePosition.X + Box.AbsoluteSize.X * 0.5 - Scene.AbsolutePosition.X,
-			Box.AbsolutePosition.Y + Box.AbsoluteSize.Y - Scene.AbsolutePosition.Y
-		)
-
-		local Delta = Target - Origin
-		local Length = Delta.Magnitude
-
-		if Length < 1 then
-			return
-		end
-
-		local Mid = (Origin + Target) * 0.5
-
-		Tracer.Position = UDim2.fromOffset(Mid.X, Mid.Y)
-		Tracer.Size = UDim2.fromOffset(Length, 1)
-		Tracer.Rotation = math.deg(math.atan2(Delta.Y, Delta.X))
-	end
-
-	return Preview
-end
-
-local Esp = BuildESPPreview()
+local PreviewData = ESP.new({
+	ShowName = true,
+	ShowHealth = true,
+	ShowDistance = true,
+	ShowBox = true,
+	ShowFill = true,
+	ShowTracer = true,
+	Color = Color3.fromRGB(235, 75, 75),
+	TextColor = Color3.new(1, 1, 1),
+	OutlineColor = Color3.new(0, 0, 0),
+}):Preview()
 
 EspGroup:AddUIPassthrough("EspPreview", {
-	Instance = Esp.Root,
+	Instance = PreviewData.Viewport,
 	Height = 220,
 	Visible = true,
 })
 
--- Options that drive the preview live
+-- Toggles to control the preview in real-time
 local EspBox = EspGroup:AddToggle("EspBox", { Text = "Box", Default = true })
 EspBox:OnChanged(function(Value)
-	for _, Line in ipairs(Esp.Lines) do
-		Line.Visible = Value
+	if PreviewData.ESP and PreviewData.ESP.Box then
+		PreviewData.ESP.Box.Visible = Value
 	end
 end)
 
-local EspFill = EspGroup:AddToggle("EspFill", { Text = "Box fill", Default = true })
+local EspFill = EspGroup:AddToggle("EspFill", { Text = "Box Fill", Default = true })
 EspFill:OnChanged(function(Value)
-	Esp.Fill.Visible = Value
+	if PreviewData.ESP and PreviewData.ESP.BoxFill then
+		PreviewData.ESP.BoxFill.Visible = Value
+	end
 end)
 
 local EspName = EspGroup:AddToggle("EspName", { Text = "Name", Default = true })
 EspName:OnChanged(function(Value)
-	Esp.Name.Visible = Value
+	if PreviewData.ESP and PreviewData.ESP.NameLabel then
+		PreviewData.ESP.NameLabel.Visible = Value
+	end
 end)
 
-local EspHealth = EspGroup:AddToggle("EspHealth", { Text = "Health bar", Default = true })
+local EspHealth = EspGroup:AddToggle("EspHealth", { Text = "Health Bar", Default = true })
 EspHealth:OnChanged(function(Value)
-	Esp.HealthBg.Visible = Value
+	if PreviewData.ESP and PreviewData.ESP.HealthLabel then
+		PreviewData.ESP.HealthLabel.Visible = Value
+	end
 end)
 
 local EspDistance = EspGroup:AddToggle("EspDistance", { Text = "Distance", Default = true })
 EspDistance:OnChanged(function(Value)
-	Esp.Distance.Visible = Value
+	if PreviewData.ESP and PreviewData.ESP.DistLabel then
+		PreviewData.ESP.DistLabel.Visible = Value
+	end
 end)
 
 local EspTracer = EspGroup:AddToggle("EspTracer", { Text = "Tracer", Default = true })
 EspTracer:OnChanged(function(Value)
-	Esp.Tracer.Visible = Value
-
-	if Value then
-		Esp:UpdateTracer()
+	if PreviewData.ESP and PreviewData.ESP.Tracer then
+		PreviewData.ESP.Tracer.Visible = Value
 	end
-end)
-
-local EspScale = EspGroup:AddSlider("EspScale", { Text = "Preview scale", Default = 40, Min = 20, Max = 70, Rounding = 0 })
-EspScale:OnChanged(function(Value)
-	local Scale = Value / 100
-	Esp.Dummy.Size = UDim2.fromScale(Scale, Scale * 1.5)
-	Esp:UpdateTracer()
 end)
 
 EspGroup:AddLabel("Colour"):AddColorPicker("EspColor", {
 	Default = Color3.fromRGB(235, 75, 75),
 	Callback = function(Value)
-		for _, Line in ipairs(Esp.Lines) do
-			Line.BackgroundColor3 = Value
+		if PreviewData.ESP then
+			if PreviewData.ESP.BoxFill then
+				PreviewData.ESP.BoxFill.BackgroundColor3 = Value
+			end
+			if PreviewData.ESP.Tracer then
+				PreviewData.ESP.Tracer.BackgroundColor3 = Value
+			end
+			PreviewData.ESP.Color = Value
 		end
-
-		Esp.Fill.BackgroundColor3 = Value
-		Esp.Tracer.BackgroundColor3 = Value
 	end,
 })
 
--- keep the tracer lined up when the preview resizes
-Esp.Scene:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-	if Esp.Tracer.Visible then
-		Esp:UpdateTracer()
+Library:OnUnload(function()
+	if PreviewData and PreviewData.Cleanup then
+		PreviewData.Cleanup()
 	end
-end)
-
-task.defer(function()
-	Esp:UpdateTracer()
 end)
 
 -- =====================================================================
@@ -1119,6 +973,10 @@ local StatsPanel = Library:CreatePopout({
 
 local FpsLabel = StatsPanel:AddLabel("FPS: --")
 local UptimeLabel = StatsPanel:AddLabel("Uptime: 0s")
+StatsPanel:AddDivider()
+StatsPanel:AddToggle("StatsAutoRefresh", { Text = "Auto Refresh", Default = true })
+StatsPanel:AddInput("StatsName", { Text = "Display Name", Default = "Stats" })
+StatsPanel:AddLabel("These elements live inside the popout panel!")
 
 -- Panel 2 - full of options, starts hidden
 local PlayerPanel = Library:CreatePopout({
