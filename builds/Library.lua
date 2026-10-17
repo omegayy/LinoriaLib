@@ -9457,22 +9457,28 @@ end
                     end
                 end
 
-                -- Fallback: if nothing could be mirrored (recorder mismatch), clone
-                -- the visual children so the popout is never empty. Originals stay put.
-                if Mirrored == 0 then
-                    local Target = Panel.Container or Panel.Content or Panel.Inner or (Panel.Outer and Panel.Outer.Parent)
+                -- Fallback: clone everything so popout is NEVER empty
+                do
+                    local Target = Panel.Container or Panel.Content or Panel.Inner
+
+                    if typeof(Target) ~= "Instance" then
+                        Target = (Panel.Outer and Panel.Outer.Parent) or Panel.Outer
+                    end
+
+                    if typeof(Target) ~= "Instance" then
+                        Target = Panel
+                    end
 
                     for _, Element in next, Groupbox.Container:GetChildren() do
                         if Element:IsA("UIListLayout") then
                             continue
                         end
 
-                        if typeof(Target) == "Instance" then
-                            pcall(function()
-                                local Copy = Element:Clone()
-                                Copy.Parent = Target
-                            end)
-                        end
+                        pcall(function()
+                            local Copy = Element:Clone()
+                            Copy.Visible = true
+                            Copy.Parent = Target
+                        end)
                     end
                 end
 
