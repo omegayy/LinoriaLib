@@ -1460,6 +1460,7 @@ do
             Callback = Info.Callback or function(Value) end;
             ChangedCallback = Info.ChangedCallback or function(New) end;
             SyncToggleState = Info.SyncToggleState or false;
+            ShowInKeybinds = if typeof(Info.ShowInKeybinds) == "boolean" then Info.ShowInKeybinds else true;
         }
 
         if KeyPicker.Mode == "Press" then
@@ -1930,6 +1931,10 @@ do
 
         --// Should this keybind be shown in the keybind menu? (respects the filter settings)
         function KeyPicker:ShouldShowInKeybinds()
+            if KeyPicker.ShowInKeybinds == false then
+                return false
+            end
+
             local Filters = Library.KeybindFilters or {}
 
             if Filters.ShowBoundOnly and not KeyPicker:IsBound() then
@@ -1941,6 +1946,21 @@ do
             end
 
             return true
+        end
+
+        --// Toggle whether this keybind appears in the keybind menu
+        function KeyPicker:SetShowInKeybinds(Value)
+            KeyPicker.ShowInKeybinds = Value ~= false
+
+            if type(Library.UpdateKeybindFrameSize) == "function" then
+                Library:UpdateKeybindFrameSize()
+            end
+
+            if type(Library.RefreshKeybindList) == "function" then
+                Library:RefreshKeybindList()
+            end
+
+            return KeyPicker
         end
 
         function KeyPicker:GetState()
@@ -8099,6 +8119,193 @@ function Library:CreateWindow(...)
 
     table.insert(Library.DragBlockers, Library.SearchBar)
 
+    --// Makes any popout's content render correctly: raises content ZIndex above
+    --// the popout frames (this ScreenGui uses GLOBAL ZIndexBehavior) and sizes the
+    --// content canvas so nothing gets clipped.
+    function Library:RefreshPopoutLayout(Panel)
+        if typeof(Panel) ~= "table" then
+            return Panel
+        end
+
+        local Content = Panel.Container or Panel.Content
+
+        if typeof(Content) == "Instance" then
+            for _, Desc in next, Content:GetDescendants() do
+                if Desc:IsA("GuiObject") then
+                    Desc.ZIndex = (Desc.ZIndex or 1) + 300
+                end
+            end
+
+            if Content:IsA("ScrollingFrame") then
+                local Layout = Content:FindFirstChildOfClass("UIListLayout")
+                local Height = if Layout then Layout.AbsoluteContentSize.Y else 0
+
+                if Height < 120 then
+                    Height = 0
+                    for _, Child in next, Content:GetChildren() do
+                        if not Child:IsA("UIListLayout") and not Child:IsA("UIGridLayout") then
+                            Height = Height + 30
+                        end
+                    end
+                end
+
+                Content.CanvasSize = UDim2.fromOffset(0, Height + 16)
+            end
+        end
+
+        local Settings = Panel.SettingsPanel
+        if typeof(Settings) == "Instance" then
+            Settings.ZIndex = (Settings.ZIndex or 1) + 500
+            for _, Desc in next, Settings:GetDescendants() do
+                if Desc:IsA("GuiObject") then
+                    Desc.ZIndex = (Desc.ZIndex or 1) + 500
+                end
+            end
+        end
+
+        return Panel
+    end
+
+    --// Options gear (top right corner of the window) \\--
+    local OptionsButton = Library:Create("TextButton", {
+        AnchorPoint = Vector2.new(1, 0);
+        AutoButtonColor = false;
+        BackgroundColor3 = Library.MainColor;
+        BorderColor3 = Library.OutlineColor;
+        BorderMode = Enum.BorderMode.Inset;
+        Position = UDim2.new(1, -159, 0, 3);
+        Size = UDim2.fromOffset(19, 19);
+        Text = "";
+        ZIndex = 5;
+        Parent = Inner;
+    })
+
+    Library:AddToRegistry(OptionsButton, {
+        BackgroundColor3 = "MainColor";
+        BorderColor3 = "OutlineColor";
+    })
+
+    do
+        local Icon = Library:GetCustomIcon("settings")
+        if Icon then
+            Library:Create("ImageLabel", {
+                BackgroundTransparency = 1;
+                Position = UDim2.fromOffset(3, 3);
+                Size = UDim2.new(1, -6, 1, -6);
+                Image = Icon.Url;
+                ImageRectOffset = Icon.ImageRectOffset;
+                ImageRectSize = Icon.ImageRectSize;
+                ImageColor3 = Library.FontColor;
+                ZIndex = 6;
+                Parent = OptionsButton;
+            })
+        else
+            OptionsButton.Text = "O"
+            OptionsButton.Font = Library.Font
+            OptionsButton.TextColor3 = Library.FontColor
+            OptionsButton.TextSize = 12
+            Library:ApplyTextStroke(OptionsButton)
+            Library:AddToRegistry(OptionsButton, { TextColor3 = "FontColor" })
+        end
+    end
+
+    Library:OnHighlight(OptionsButton, OptionsButton,
+        { BorderColor3 = "AccentColor" },
+        { BorderColor3 = "OutlineColor" },
+        function() return true end
+    )
+
+    table.insert(Library.DragBlockers, OptionsButton)
+
+    --// Opens the options panel (theme settings, keybind filters, unload, rejoin).
+    --// Add your own controls with:  Library.OptionsPanel:AddToggle(...)
+    function Library:OpenOptionsMenu()
+        if Library.Unloaded then
+            return nil
+        end
+
+        if typeof(Library.OptionsPanel) == "table" and not Library.OptionsPanel.Destroyed then
+            Library.OptionsPanel:SetVisible(true)
+            return Library.OptionsPanel
+        end
+
+        local Panel = Library:CreatePopout({
+            Title = "Options";
+            Size = UDim2.fromOffset(320, 400);
+            Position = UDim2.new(0.5, 0, 0.5, 0);
+            Visible = true;
+            ShowWhenMenuClosed = true;
+            Resizable = true;
+        })
+
+        Library.OptionsPanel = Panel
+
+        -- Theme settings (only when the ThemeManager addon has been loaded)
+        local ThemeManager = Library.ThemeManager or getgenv().ThemeManager
+        if typeof(ThemeManager) == "table" and type(ThemeManager.CreateThemeManager) == "function" then
+            local ok = pcall(function()
+                ThemeManager:CreateThemeManager(Panel)
+            end)
+            if not ok then
+                Panel:AddLabel("Theme controls failed to load")
+            end
+        else
+            Panel:AddLabel("Load the ThemeManager addon for theme settings")
+        end
+
+        Panel:AddDivider()
+
+        Panel:AddToggle("Options_ShowBoundOnly", {
+            Text = "Keybind menu: show bound only";
+            Default = (Library.KeybindFilters and Library.KeybindFilters.ShowBoundOnly) or false;
+        }):OnChanged(function(Value)
+            Library.KeybindFilters = Library.KeybindFilters or {}
+            Library.KeybindFilters.ShowBoundOnly = Value
+            if type(Library.RefreshKeybindList) == "function" then Library:RefreshKeybindList() end
+            if type(Library.UpdateKeybindFrameSize) == "function" then Library:UpdateKeybindFrameSize() end
+        end)
+
+        Panel:AddToggle("Options_ShowEnabledOnly", {
+            Text = "Keybind menu: show enabled only";
+            Default = (Library.KeybindFilters and Library.KeybindFilters.ShowEnabledOnly) or false;
+        }):OnChanged(function(Value)
+            Library.KeybindFilters = Library.KeybindFilters or {}
+            Library.KeybindFilters.ShowEnabledOnly = Value
+            if type(Library.RefreshKeybindList) == "function" then Library:RefreshKeybindList() end
+            if type(Library.UpdateKeybindFrameSize) == "function" then Library:UpdateKeybindFrameSize() end
+        end)
+
+        Panel:AddDivider()
+
+        Panel:AddButton({
+            Text = "Unload";
+            Func = function()
+                Library:Unload()
+            end;
+        })
+
+        Panel:AddButton({
+            Text = "Rejoin";
+            Func = function()
+                local TeleportService = game:GetService("TeleportService")
+                local Players = game:GetService("Players")
+                TeleportService:Teleport(game.PlaceId, Players.LocalPlayer)
+            end;
+        })
+
+        Library:RefreshPopoutLayout(Panel)
+
+        return Panel
+    end
+
+    OptionsButton.MouseButton1Click:Connect(function()
+        if Library.Unloaded then
+            return
+        end
+
+        Library:OpenOptionsMenu()
+    end)
+
     local SearchResultsOuter = Library:Create("Frame", {
         BackgroundColor3 = Color3.new(0, 0, 0);
         BorderColor3 = Color3.new(0, 0, 0);
@@ -9496,52 +9703,9 @@ end
                     end)
                 end
 
-                -- ALWAYS size the popout's content canvas (there's no Window around
-                -- it to do this like in the main menu) or the mirrored elements get
-                -- clipped out of view entirely.
+                -- Render fix: raise content above the popout frames + size the canvas.
                 pcall(function()
-                    local Content = Panel.Container or Panel.Content
-                    if typeof(Content) == "Instance" and Content:IsA("ScrollingFrame") then
-                        local Layout = Content:FindFirstChildOfClass("UIListLayout")
-                        local Height = if Layout then Layout.AbsoluteContentSize.Y else 0
-                        if Height < 120 then
-                            Height = 0
-                            for _, Child in next, Content:GetChildren() do
-                                if not Child:IsA("UIListLayout") and not Child:IsA("UIGridLayout") then
-                                    Height = Height + 30
-                                end
-                            end
-                        end
-                        Content.CanvasSize = UDim2.fromOffset(0, Height + 16)
-                    end
-                end)
-
-                -- ZIndexBehavior is GLOBAL, and the popout frames sit at ZIndex 200+.
-                -- Mirrored/cloned elements keep their original low ZIndex (~5), so they
-                -- render BEHIND the popout's opaque background. Raise them above it.
-                pcall(function()
-                    local Content = Panel.Container or Panel.Content
-                    if typeof(Content) == "Instance" then
-                        for _, Desc in next, Content:GetDescendants() do
-                            if Desc:IsA("GuiObject") then
-                                Desc.ZIndex = (Desc.ZIndex or 1) + 300
-                            end
-                        end
-                    end
-                end)
-
-                -- The settings panel must stay ABOVE the (now raised) content so the
-                -- gear menu never opens behind the mirrored elements.
-                pcall(function()
-                    local SP = Panel.SettingsPanel
-                    if typeof(SP) == "Instance" then
-                        SP.ZIndex = SP.ZIndex + 500
-                        for _, Desc in next, SP:GetDescendants() do
-                            if Desc:IsA("GuiObject") then
-                                Desc.ZIndex = (Desc.ZIndex or 1) + 500
-                            end
-                        end
-                    end
+                    Library:RefreshPopoutLayout(Panel)
                 end)
 
                 print("[Linoria Popout] Recorded="..#Recorded.." Mirrored="..Mirrored)

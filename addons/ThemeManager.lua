@@ -103,6 +103,7 @@ local ThemeManager = {} do
 
 	function ThemeManager:SetLibrary(library)
 		self.Library = library
+		library.ThemeManager = self
 	end
 
 	--// Folders \\--
