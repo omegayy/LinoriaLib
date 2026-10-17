@@ -7536,8 +7536,16 @@ do
         function Popout:SetTransparency(Value)
             Popout.Transparency = typeof(Value) == "number" and math.clamp(Value, 0, 1) or 0
 
+            if typeof(Outer) == "Instance" then
+                Outer.BackgroundTransparency = Popout.Transparency
+            end
+
             if typeof(Inner) == "Instance" then
                 Inner.BackgroundTransparency = Popout.Transparency
+            end
+
+            if typeof(TitleBar) == "Instance" then
+                TitleBar.BackgroundTransparency = Popout.Transparency
             end
 
             return Popout
@@ -8790,7 +8798,7 @@ function Library:CreateWindow(...)
         }):OnChanged(function(Value)
             Library.PopoutTransparency = Value / 100
             pcall(function()
-                Panel.Inner.BackgroundTransparency = Library.PopoutTransparency
+                Panel:SetTransparency(Library.PopoutTransparency)
             end)
         end)
 
