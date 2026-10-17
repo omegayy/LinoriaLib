@@ -39,7 +39,6 @@ local repo = getgenv().LINORIA_REPO or "https://raw.githubusercontent.com/omegay
 local Library = loadstring(game:HttpGet(repo .. "Library.lua?v=" .. tostring(tick())))()
 local ThemeManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/omegayy/LinoriaLib/main/addons/ThemeManager.lua"))()
 local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/omegayy/LinoriaLib/main/addons/SaveManager.lua"))()
-local ESP = loadstring(game:HttpGet(repo .. "ESP.lua?v=" .. tostring(tick())))()
 
 print("[Linoria] Example r5 loaded")
 
@@ -875,98 +874,6 @@ MiscBox:AddButton({
 	end
 })
 
--- =====================================================================
--- ESP PREVIEW (using the ESP plugin)
--- =====================================================================
--- This shows how to use the ESP plugin's built-in 3D preview.
--- The same ESP module works for live players AND for UI previews.
-local EspGroup = FeaturesTab:AddRightGroupbox("ESP Preview")
-
-local PreviewContainer = Instance.new("Frame")
-PreviewContainer.BackgroundTransparency = 1
-PreviewContainer.Size = UDim2.fromScale(1, 1)
-
-local PreviewData = ESP.new({
-	ShowName = true,
-	ShowHealth = true,
-	ShowDistance = true,
-	ShowBox = true,
-	ShowFill = true,
-	ShowTracer = true,
-	Color = Color3.fromRGB(235, 75, 75),
-	TextColor = Color3.new(1, 1, 1),
-	OutlineColor = Color3.new(0, 0, 0),
-}):Preview(PreviewContainer)
-
-EspGroup:AddUIPassthrough("EspPreview", {
-	Instance = PreviewContainer,
-	Height = 220,
-	Visible = true,
-})
-
--- Toggles to control the preview in real-time
-local EspBox = EspGroup:AddToggle("EspBox", { Text = "Box", Default = true })
-EspBox:OnChanged(function(Value)
-	if PreviewData.ESP and PreviewData.ESP.Box then
-		PreviewData.ESP.Box.Visible = Value
-	end
-end)
-
-local EspFill = EspGroup:AddToggle("EspFill", { Text = "Box Fill", Default = true })
-EspFill:OnChanged(function(Value)
-	if PreviewData.ESP and PreviewData.ESP.BoxFill then
-		PreviewData.ESP.BoxFill.Visible = Value
-	end
-end)
-
-local EspName = EspGroup:AddToggle("EspName", { Text = "Name", Default = true })
-EspName:OnChanged(function(Value)
-	if PreviewData.ESP and PreviewData.ESP.NameLabel then
-		PreviewData.ESP.NameLabel.Visible = Value
-	end
-end)
-
-local EspHealth = EspGroup:AddToggle("EspHealth", { Text = "Health Bar", Default = true })
-EspHealth:OnChanged(function(Value)
-	if PreviewData.ESP and PreviewData.ESP.HealthLabel then
-		PreviewData.ESP.HealthLabel.Visible = Value
-	end
-end)
-
-local EspDistance = EspGroup:AddToggle("EspDistance", { Text = "Distance", Default = true })
-EspDistance:OnChanged(function(Value)
-	if PreviewData.ESP and PreviewData.ESP.DistLabel then
-		PreviewData.ESP.DistLabel.Visible = Value
-	end
-end)
-
-local EspTracer = EspGroup:AddToggle("EspTracer", { Text = "Tracer", Default = true })
-EspTracer:OnChanged(function(Value)
-	if PreviewData.ESP and PreviewData.ESP.Tracer then
-		PreviewData.ESP.Tracer.Visible = Value
-	end
-end)
-
-EspGroup:AddLabel("Colour"):AddColorPicker("EspColor", {
-	Default = Color3.fromRGB(235, 75, 75),
-	Callback = function(Value)
-		if PreviewData.ESP then
-			if PreviewData.ESP.BoxFill then
-				PreviewData.ESP.BoxFill.BackgroundColor3 = Value
-			end
-			if PreviewData.ESP.Tracer then
-				PreviewData.ESP.Tracer.BackgroundColor3 = Value
-			end
-			PreviewData.ESP.Color = Value
-		end
-	end,
-})
-
-Library:OnUnload(function()
-	if PreviewData and PreviewData.Cleanup then
-		PreviewData.Cleanup()
-	end
-end)
 
 -- =====================================================================
 -- FLOATING PANELS (Popout Windows)

@@ -8365,9 +8365,157 @@ function Library:CreateWindow(...)
 
     table.insert(Library.DragBlockers, ServerButton)
 
-    --// Lists the public servers for this place and teleports to one on click.
-    --// Note: Roblox's server API does NOT expose region/ping, so sorting is by
-    --// player count and how full the server is. \\--
+    --// The executor's cross-domain request function (needed to reach
+    --// gamejoin.roblox.com and the GeoIP service). \\--
+    local function GetHttpRequestFunc()
+        return (syn and syn.request) or (http and http.request) or http_request or request or (fluxus and fluxus.request)
+    end
+
+    --// Roblox's public server list does not expose a region, so we resolve it
+    --// best-effort: gamejoin gives us the server's IP, then the unique IPs are
+    --// GeoIP'd in batches (ip-api allows up to 100 per request). Results are
+    --// cached per job id for the session so refreshes stay instant. \\--
+    function Library:ResolveServerRegions(Servers, OnProgress)
+        local HttpRequest = GetHttpRequestFunc()
+
+        if type(HttpRequest) ~= "function" then
+            return false, "This executor has no request/http_request function"
+        end
+
+        local HttpService = game:GetService("HttpService")
+        Library.ServerRegionCache = Library.ServerRegionCache or {}
+
+        local ToResolve = {}
+
+        for _, Server in next, Servers do
+            if Server._Region == nil then
+                if Library.ServerRegionCache[Server.id] then
+                    Server._Region = Library.ServerRegionCache[Server.id]
+                else
+                    table.insert(ToResolve, Server)
+                end
+            end
+        end
+
+        if #ToResolve == 0 then
+            if type(OnProgress) == "function" then
+                OnProgress()
+            end
+
+            return true
+        end
+
+        task.spawn(function()
+            -- small chunks so the list fills in progressively
+            for Start = 1, #ToResolve, 15 do
+                local Chunk = {}
+                local IPs = {}
+                local Order = {}
+
+                for i = Start, math.min(Start + 14, #ToResolve) do
+                    local Server = ToResolve[i]
+                    table.insert(Chunk, Server)
+
+                    local Ok, Response = pcall(HttpRequest, {
+                        Url = "https://gamejoin.roblox.com/v1/join-game-instance";
+                        Method = "POST";
+                        Headers = { ["Content-Type"] = "application/json" };
+                        Body = HttpService:JSONEncode({
+                            placeId = game.PlaceId;
+                            gameId = Server.id;
+                            gameJoinAttemptId = Server.id;
+                            isTeleport = false;
+                            isPlayTogetherGame = false;
+                        });
+                    })
+
+                    local Address
+
+                    if Ok and type(Response) == "table" and type(Response.Body) == "string" then
+                        local DecodeOk, Data = pcall(function()
+                            return HttpService:JSONDecode(Response.Body)
+                        end)
+
+                        if DecodeOk and type(Data) == "table" and type(Data.joinScript) == "table" then
+                            local Join = Data.joinScript
+                            Address = Join.MachineAddress
+
+                            if not Address and type(Join.UdmuxEndpoints) == "table" and Join.UdmuxEndpoints[1] then
+                                Address = Join.UdmuxEndpoints[1].Address
+                            end
+                        end
+                    end
+
+                    if Address then
+                        Server._IP = Address
+
+                        if not IPs[Address] then
+                            IPs[Address] = true
+                            table.insert(Order, Address)
+                        end
+                    else
+                        Server._Region = "Unknown"
+                    end
+                end
+
+                if #Order > 0 then
+                    local Ok, Response = pcall(HttpRequest, {
+                        Url = "http://ip-api.com/batch?fields=status,query,countryCode,city,regionName";
+                        Method = "POST";
+                        Headers = { ["Content-Type"] = "application/json" };
+                        Body = HttpService:JSONEncode(Order);
+                    })
+
+                    local Map = {}
+
+                    if Ok and type(Response) == "table" and type(Response.Body) == "string" then
+                        local DecodeOk, Data = pcall(function()
+                            return HttpService:JSONDecode(Response.Body)
+                        end)
+
+                        if DecodeOk and type(Data) == "table" then
+                            for _, Entry in next, Data do
+                                if type(Entry) == "table" and Entry.query then
+                                    local Region = Entry.city
+
+                                    if Region and Entry.countryCode and Entry.countryCode ~= "" then
+                                        Region = Region .. ", " .. Entry.countryCode
+                                    else
+                                        Region = Entry.regionName or Entry.countryCode
+                                    end
+
+                                    Map[Entry.query] = Region or "Unknown"
+                                end
+                            end
+                        end
+                    end
+
+                    for _, Server in next, Chunk do
+                        if Server._Region == nil then
+                            Server._Region = (Server._IP and Map[Server._IP]) or "Unknown"
+                            Library.ServerRegionCache[Server.id] = Server._Region
+                        end
+                    end
+                else
+                    for _, Server in next, Chunk do
+                        if Server._Region == nil then
+                            Server._Region = "Unknown"
+                        end
+                    end
+                end
+
+                if type(OnProgress) == "function" then
+                    OnProgress()
+                end
+
+                task.wait(0.2)
+            end
+        end)
+
+        return true
+    end
+
+    --// Lists the public servers for this place and teleports to one on click. \\--
     function Library:OpenServerBrowser()
         if Library.Unloaded then
             return nil
@@ -8394,20 +8542,31 @@ function Library:CreateWindow(...)
         Library.ServerBrowserPanel = Panel
 
         local Servers = {}
-        local SortMode = "Most players"
+        local SortMode = "Highest players"
         local FetchServers = nil
+        local Resolving = false
+        local SortOptions = { "Highest players", "Lowest players", "Most full", "Least full", "Region" }
 
         local function SortServers()
             table.sort(Servers, function(a, b)
                 local FillA = (a.playing or 0) / math.max(a.maxPlayers or 1, 1)
                 local FillB = (b.playing or 0) / math.max(b.maxPlayers or 1, 1)
 
-                if SortMode == "Least players" then
+                if SortMode == "Lowest players" then
                     return (a.playing or 0) < (b.playing or 0)
                 elseif SortMode == "Most full" then
                     return FillA > FillB
                 elseif SortMode == "Least full" then
                     return FillA < FillB
+                elseif SortMode == "Region" then
+                    local RegionA = a._Region or "~"
+                    local RegionB = b._Region or "~"
+
+                    if RegionA == RegionB then
+                        return (a.playing or 0) > (b.playing or 0)
+                    end
+
+                    return RegionA < RegionB
                 end
 
                 return (a.playing or 0) > (b.playing or 0)
@@ -8433,7 +8592,7 @@ function Library:CreateWindow(...)
             end
 
             local SortDropdown = Panel:AddDropdown("ServerBrowserSort", {
-                Values = { "Most players", "Least players", "Most full", "Least full" };
+                Values = SortOptions;
                 Default = SortMode;
                 Multi = false;
                 Text = "Sort By";
@@ -8452,6 +8611,26 @@ function Library:CreateWindow(...)
                 FetchServers()
             end)
 
+            Panel:AddButton("Resolve Regions", function()
+                if Resolving then
+                    return
+                end
+
+                Resolving = true
+                Library:Notify("Resolving server regions...", 3)
+
+                local Ok, Err = Library:ResolveServerRegions(Servers, function()
+                    Resolving = false
+                    SortServers()
+                    RebuildList()
+                end)
+
+                if not Ok then
+                    Resolving = false
+                    Library:Notify(Err or "Region lookup unavailable.", 4)
+                end
+            end)
+
             Panel:AddDivider()
 
             if #Servers == 0 then
@@ -8462,7 +8641,7 @@ function Library:CreateWindow(...)
                 local JobId = Server.id
 
                 Panel:AddButton({
-                    Text = string.format("%d/%d players — Join", Server.playing or 0, Server.maxPlayers or 0);
+                    Text = string.format("[%s] %d/%d players - Join", Server._Region or "...", Server.playing or 0, Server.maxPlayers or 0);
                     Func = function()
                         JoinServer(JobId)
                     end,
@@ -8502,6 +8681,18 @@ function Library:CreateWindow(...)
 
                 if #Servers == 0 then
                     Library:Notify("Could not fetch server list (API may require auth).", 4)
+                    return
+                end
+
+                -- resolve regions automatically (uses the session cache when possible)
+                if not Resolving then
+                    Resolving = true
+
+                    Library:ResolveServerRegions(Servers, function()
+                        Resolving = false
+                        SortServers()
+                        RebuildList()
+                    end)
                 end
             end)
         end
