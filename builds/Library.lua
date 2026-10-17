@@ -2827,9 +2827,6 @@ do
             if type(Library.BringToFront) == "function" then
                 pcall(function() Library:BringToFront(PickerFrameOuter, 1000) end)
             end
-            if type(Library.BringToFront) == "function" then
-                pcall(function() Library:BringToFront(PickerFrameOuter, 1000) end)
-            end
         end
 
         function ColorPicker:Hide()
