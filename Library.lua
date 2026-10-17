@@ -9382,22 +9382,56 @@ end
                     end
                 end
 
+                local Recorded = Groupbox.RecordedElements or {}
+                local PanelHeight = math.clamp(46 + #Recorded * 26, 120, 560)
+
                 local Panel = Library:CreatePopout({
-                    Title = Info.Title or Info.Name or Info.Name,
-                    Size = Info.Size or UDim2.fromOffset(280, 0),
+                    Title = Info.Title or "Popout",
+                    Size = Info.Size or UDim2.fromOffset(280, PanelHeight),
                     Position = Info.Position or UDim2.fromOffset(160, 160),
                     Visible = true,
                     ShowWhenMenuClosed = true,
                     Resizable = true,
                 })
 
-                local Children = Groupbox.Container:GetChildren()
-                for _, Element in next, Children do
-                    if not Element:IsA("UIListLayout") then
-                        -- COPY the elements: the original groupbox keeps its
-                        -- contents, the panel gets a working-looking copy.
-                        local Copy = Element:Clone()
-                        Copy.Parent = Panel.Container
+                -- Re-create every element through the REAL library API inside
+                -- the panel (correct layout/theming), then bind original <->
+                -- mirror so both copies are live and fully interactive.
+                for _, Rec in next, Recorded do
+                    local Args = {}
+                    for i = 1, Rec.Args.n do
+                        Args[i] = Rec.Args[i]
+                    end
+
+                    local OrigIdx = Rec.Args[1]
+
+                    -- Unique index so the mirror never overwrites Toggles/Options
+                    if type(Args[1]) == "string" then
+                        Args[1] = Args[1] .. "_popout"
+                    end
+
+                    -- Start the mirror at the element's live value
+                    if type(Args[2]) == "table" and type(OrigIdx) == "string" then
+                        local OrigElement = (Rec.Method == "AddToggle" and (Toggles[OrigIdx] or Options[OrigIdx])) or Options[OrigIdx]
+                        if typeof(OrigElement) == "table" and OrigElement.Value ~= nil then
+                            Args[2] = table.clone(Args[2])
+                            Args[2].Default = OrigElement.Value
+                        end
+                    end
+
+                    local Mirror = Panel[Rec.Method](Panel, table.unpack(Args, 1, #Args))
+
+                    local Orig = nil
+                    if type(OrigIdx) == "string" then
+                        if Rec.Method == "AddToggle" then
+                            Orig = Toggles[OrigIdx] or Options[OrigIdx]
+                        elseif Rec.Method == "AddSlider" or Rec.Method == "AddDropdown" or Rec.Method == "AddInput" then
+                            Orig = Options[OrigIdx]
+                        end
+                    end
+
+                    if typeof(Orig) == "table" and typeof(Mirror) == "table" and Mirror ~= Orig then
+                        Library:BindElements(Orig, Mirror)
                     end
                 end
 
@@ -9413,13 +9447,7 @@ end
                     return
                 end
 
-                PopoutButton.MouseButton1Click:Connect(function()
-                    if Library.Unloaded then
-                        return
-                    end
-
-                    Groupbox:Popout()
-                end)
+                Groupbox:Popout()
             end)
 
             Groupbox:AddBlank(3)
@@ -10023,6 +10051,112 @@ Library:GiveSignal(RunService.RenderStepped:Connect(function(Delta)
 end))
 
 ----
+--// Record how elements are created on groupboxes/popouts so Groupbox:Popout
+--// can mirror them into a floating panel with full interactivity.
+do
+    local RecordedMethods = {
+        "AddBlank", "AddDivider", "AddLabel", "AddButton",
+        "AddToggle", "AddSlider", "AddDropdown", "AddInput",
+        "AddDependencyBox", "AddDependencyGroupbox",
+        "AddImage", "AddVideo", "AddViewport", "AddUIPassthrough",
+    }
+
+    for _, MethodName in next, RecordedMethods do
+        local Original = BaseGroupboxFuncs[MethodName]
+
+        if type(Original) == "function" then
+            BaseGroupboxFuncs[MethodName] = function(Self, ...)
+                local Results = table.pack(Original(Self, ...))
+
+                if typeof(Self) == "table" then
+                    local Args = table.pack(...)
+
+                    -- Skip recording the mirror elements themselves
+                    local IsMirror = type(Args[1]) == "string" and string.sub(Args[1], -7) == "_popout"
+
+                    if not IsMirror then
+                        Self.RecordedElements = Self.RecordedElements or {}
+                        table.insert(Self.RecordedElements, {
+                            Method = MethodName;
+                            Args = Args;
+                        })
+                    end
+                end
+
+                return table.unpack(Results, 1, Results.n)
+            end
+        end
+    end
+end
+
+--// Bind two elements together so they share state in both directions
+--// (used by Groupbox:Popout to make the popped-out copy fully interactive).
+function Library:BindElements(A, B)
+    if typeof(A) ~= "table" or typeof(B) ~= "table" or A == B then
+        return
+    end
+
+    local SetterName = nil
+    if type(A.SetValue) == "function" and type(B.SetValue) == "function" then
+        SetterName = "SetValue"
+    elseif type(A.Set) == "function" and type(B.Set) == "function" then
+        SetterName = "Set"
+    end
+
+    if SetterName == nil then
+        return
+    end
+
+    local Group = A._BindGroup
+    if Group == nil then
+        Group = { Members = { A }, Syncing = false }
+        A._BindGroup = Group
+
+        local OrigSetter = A[SetterName]
+        A[SetterName] = function(Self, Value, ...)
+            OrigSetter(Self, Value, ...)
+
+            if not Group.Syncing then
+                Group.Syncing = true
+                for _, Other in next, Group.Members do
+                    if Other ~= A then
+                        pcall(function() Other[SetterName](Other, Value) end)
+                    end
+                end
+                Group.Syncing = false
+            end
+        end
+    end
+
+    if table.find(Group.Members, B) ~= nil then
+        return
+    end
+
+    table.insert(Group.Members, B)
+
+    local MirrorSetter = B[SetterName]
+    B[SetterName] = function(Self, Value, ...)
+        MirrorSetter(Self, Value, ...)
+
+        if not Group.Syncing then
+            Group.Syncing = true
+            for _, Other in next, Group.Members do
+                if Other ~= B then
+                    pcall(function() Other[SetterName](Other, Value) end)
+                end
+            end
+            Group.Syncing = false
+        end
+    end
+
+    -- The mirror starts in sync with the original's live value
+    if A.Value ~= nil then
+        Group.Syncing = true
+        pcall(function() MirrorSetter(B, A.Value) end)
+        Group.Syncing = false
+    end
+end
+
 getgenv().Linoria = Library
 if getgenv().skip_getgenv_linoria ~= true then getgenv().Library = Library end
 return Library
