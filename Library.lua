@@ -1887,7 +1887,8 @@ do
         end
 
         function KeyPicker:Display(Text)
-            if KeyPicker.Data and KeyPicker.Data.Modes == nil then
+            local Modes = (KeyPicker.Data and KeyPicker.Data.Modes) or KeyPicker.Modes
+            if Modes == nil then
                 return
             end
 
@@ -1900,7 +1901,7 @@ do
                 end
             end
 
-            for Idx, Mode in next, KeyPicker.Data.Modes do
+            for Idx, Mode in next, Modes do
                 Count = Count + 1
 
                 local Button = Library:Create("TextButton", {
