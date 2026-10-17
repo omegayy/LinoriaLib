@@ -6806,10 +6806,10 @@ do
 
     local function TryWriteFile(Contents)
         if typeof(writefile) ~= "function" then
-            return
+            return false
         end
 
-        pcall(function()
+        local Ok = pcall(function()
             if typeof(makefolder) == "function" and typeof(isfolder) == "function" then
                 if not isfolder("LinoriaLibSettings") then
                     makefolder("LinoriaLibSettings")
@@ -6818,15 +6818,20 @@ do
 
             writefile(PopoutSaveFile, Contents)
         end)
+
+        return Ok
     end
 
     local function TryReadFile()
-        if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" then
+        if typeof(readfile) ~= "function" then
             return nil
         end
 
-        if not isfile(PopoutSaveFile) then
-            return nil
+        if typeof(isfile) == "function" then
+            local Ok, Exists = pcall(isfile, PopoutSaveFile)
+            if Ok and not Exists then
+                return nil
+            end
         end
 
         local Success, Contents = pcall(readfile, PopoutSaveFile)
