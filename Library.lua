@@ -7138,7 +7138,7 @@ do
         local SettingsOuter = Library:Create("Frame", {
             AnchorPoint = Vector2.new(1, 0);
             Position = UDim2.new(1, -3, 0, 22);
-            Size = UDim2.fromOffset(190, 162);
+            Size = UDim2.fromOffset(190, 180);
             BackgroundColor3 = Color3.new(0, 0, 0);
             BorderColor3 = Color3.new(0, 0, 0);
             Visible = false;
@@ -7256,7 +7256,7 @@ do
             Popout:Save()
         end)
 
-        --// Show this pop-out only when a specific tab is open \\--
+        --// Show this pop-out only when a specific tab is open (dropdown) \\--
         do
             local TabRow = Library:Create("TextButton", {
                 AutoButtonColor = false;
@@ -7280,6 +7280,28 @@ do
                 TextColor3 = "FontColor";
             })
 
+            local TabList = Library:Create("Frame", {
+                BackgroundColor3 = Library.BackgroundColor;
+                BorderColor3 = Library.OutlineColor;
+                BorderMode = Enum.BorderMode.Inset;
+                Position = UDim2.new(0, 0, 1, 2);
+                Size = UDim2.new(1, 0, 0, 0);
+                Visible = false;
+                ZIndex = 215;
+                Parent = TabRow;
+            })
+
+            Library:AddToRegistry(TabList, {
+                BackgroundColor3 = "BackgroundColor";
+                BorderColor3 = "OutlineColor";
+            })
+
+            Library:Create("UIListLayout", {
+                FillDirection = Enum.FillDirection.Vertical;
+                SortOrder = Enum.SortOrder.LayoutOrder;
+                Parent = TabList;
+            })
+
             local function TabNames()
                 local Names = { "Any" }
                 if Library.Window and Library.Window.Tabs then
@@ -7299,35 +7321,66 @@ do
                 TabRow.Text = "Show on tab: " .. Current
             end
 
-            UpdateTabRow()
-
-            TabRow.MouseButton1Click:Connect(function()
-                local Names = TabNames()
-                local Current = Popout.ShowWhenTab
-                if type(Current) ~= "string" or Current == "" then
-                    Current = "Any"
-                end
-
-                local Idx = 1
-                for i, Name in next, Names do
-                    if Name == Current then
-                        Idx = i
-                        break
+            local function RebuildTabList()
+                for _, Child in next, TabList:GetChildren() do
+                    if Child:IsA("GuiObject") and not Child:IsA("UIListLayout") then
+                        Child:Destroy()
                     end
                 end
 
-                Idx = (Idx % #Names) + 1
-                local Next = Names[Idx]
+                local Names = TabNames()
+                local Count = 0
 
-                if Next == "Any" then
-                    Popout.ShowWhenTab = nil
-                else
-                    Popout.ShowWhenTab = Next
+                for _, Name in next, Names do
+                    Count = Count + 1
+
+                    local Option = Library:Create("TextButton", {
+                        AutoButtonColor = false;
+                        BackgroundColor3 = Library.MainColor;
+                        BorderColor3 = Library.OutlineColor;
+                        BorderMode = Enum.BorderMode.Middle;
+                        Size = UDim2.new(1, 0, 0, 18);
+                        Font = Library.Font;
+                        Text = Name;
+                        TextColor3 = Library.FontColor;
+                        TextSize = 13;
+                        ZIndex = 216;
+                        Parent = TabList;
+                    })
+
+                    Library:ApplyTextStroke(Option)
+                    Library:AddToRegistry(Option, {
+                        BackgroundColor3 = "MainColor";
+                        BorderColor3 = "OutlineColor";
+                        TextColor3 = "FontColor";
+                    })
+
+                    Option.MouseButton1Click:Connect(function()
+                        if Name == "Any" then
+                            Popout.ShowWhenTab = nil
+                        else
+                            Popout.ShowWhenTab = Name
+                        end
+
+                        UpdateTabRow()
+                        Popout:UpdateVisibility()
+                        Popout:Save()
+                        TabList.Visible = false
+                    end)
                 end
 
-                UpdateTabRow()
-                Popout:UpdateVisibility()
-                Popout:Save()
+                TabList.Size = UDim2.new(1, 0, 0, Count * 18)
+            end
+
+            UpdateTabRow()
+            RebuildTabList()
+
+            TabRow.MouseButton1Click:Connect(function()
+                TabList.Visible = not TabList.Visible
+
+                if TabList.Visible then
+                    RebuildTabList()
+                end
             end)
         end
 
