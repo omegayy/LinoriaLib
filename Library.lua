@@ -6861,7 +6861,17 @@ do
         local Data = {}
 
         for _, Popout in ipairs(Library.Popouts) do
-            Data[Popout.Name] = Popout:GetLayout()
+            if Popout.Destroyed then
+                continue
+            end
+
+            local Ok, Layout = pcall(function()
+                return Popout:GetLayout()
+            end)
+
+            if Ok and typeof(Layout) == "table" then
+                Data[Popout.Name] = Layout
+            end
         end
 
         Library.PopoutLayout = Data
@@ -6872,14 +6882,11 @@ do
 
         if Success then
             TryWriteFile(Encoded)
-        else
-            Library:Notify("Failed to encode popout layouts.", 4)
         end
     end
 
     function Library:ApplyPopoutLayouts()
         if typeof(Library.PopoutLayout) ~= "table" then
-            print("[Popout] No PopoutLayout to apply")
             return
         end
 
@@ -7609,7 +7616,6 @@ do
         end
 
         function Popout:Save()
-            print("[Popout] Saving layout for: " .. tostring(Popout.Name))
             Library:SavePopouts()
         end
 
