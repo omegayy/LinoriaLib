@@ -6867,7 +6867,6 @@ do
 
         if Success then
             TryWriteFile(Encoded)
-            Library:Notify(string.format("Saved %d popout layout(s).", #Library.Popouts), 2)
         else
             Library:Notify("Failed to encode popout layouts.", 4)
         end
