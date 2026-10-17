@@ -7444,6 +7444,11 @@ do
 
                 if TabList.Visible then
                     RebuildTabList()
+                    if type(Library.BringToFront) == "function" then
+                        pcall(function()
+                            Library:BringToFront(TabList, 1000)
+                        end)
+                    end
                 end
             end)
         end
