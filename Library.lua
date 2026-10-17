@@ -8404,11 +8404,7 @@ function Library:CreateWindow(...)
         local Content = Panel.Container or Panel.Content
 
         if typeof(Content) == "Instance" then
-            for _, Desc in next, Content:GetDescendants() do
-                if Desc:IsA("GuiObject") then
-                    Desc.ZIndex = (Desc.ZIndex or 1) + 300
-                end
-            end
+            Library:BringToFront(Content, 300)
 
             if Content:IsA("ScrollingFrame") then
                 local Layout = Content:FindFirstChildOfClass("UIListLayout")
@@ -8429,12 +8425,7 @@ function Library:CreateWindow(...)
 
         local Settings = Panel.SettingsPanel
         if typeof(Settings) == "Instance" then
-            Settings.ZIndex = (Settings.ZIndex or 1) + 500
-            for _, Desc in next, Settings:GetDescendants() do
-                if Desc:IsA("GuiObject") then
-                    Desc.ZIndex = (Desc.ZIndex or 1) + 500
-                end
-            end
+            Library:BringToFront(Settings, 500)
         end
 
         return Panel
@@ -10190,6 +10181,7 @@ end
                 Info = Info or {}
 
                 if typeof(Groupbox._PopoutPanel) == "table" and not Groupbox._PopoutPanel.Destroyed then
+                    pcall(function() Library:FitPopoutToContent(Groupbox._PopoutPanel) end)
                     Groupbox._PopoutPanel:SetVisible(true)
                     return Groupbox._PopoutPanel
                 end
@@ -10221,119 +10213,8 @@ end
                 -- the panel (correct layout/theming), then bind original <->
                 -- mirror so both copies are live and fully interactive.
                 for _, Rec in next, Recorded do
-                    local Args = {}
-                    for i = 1, (Rec.Args.n or #Rec.Args) do
-                        Args[i] = Rec.Args[i]
-                    end
-
-                    local OrigIdx = Rec.Args[1]
-
-                    -- Unique index so the mirror never overwrites Toggles/Options.
-                    -- ONLY for element types whose first arg is an ID (not visible text).
-                    local IdxMethods = {
-                        AddToggle = true; AddSlider = true; AddDropdown = true;
-                        AddInput = true; AddKeyPicker = true; AddColorPicker = true;
-                    }
-                    if IdxMethods[Rec.Method] and type(Args[1]) == "string" then
-                        Args[1] = Args[1] .. "_popout"
-                    end
-
-                    -- Start the mirror at the element's live value
-                    if type(Args[2]) == "table" and type(OrigIdx) == "string" then
-                        local OrigElement = (Rec.Method == "AddToggle" and (Toggles[OrigIdx] or Options[OrigIdx])) or Options[OrigIdx]
-                        if typeof(OrigElement) == "table" and OrigElement.Value ~= nil then
-                            Args[2] = table.clone(Args[2])
-                            Args[2].Default = OrigElement.Value
-                        end
-                    end
-
-                    local MethodFn = (Panel and Panel[Rec.Method]) or (Library.__BaseGroupboxFuncs and Library.__BaseGroupboxFuncs[Rec.Method])
-
-                    if type(MethodFn) ~= "function" then
-                        continue
-                    end
-
-                    local ok, Mirror = pcall(function()
-                        return MethodFn(Panel, table.unpack(Args, 1, #Args))
-                    end)
-
-                    if not ok or typeof(Mirror) ~= "table" then
-                        continue
-                    end
-
-                    Mirrored = Mirrored + 1
-
-                    local Orig = nil
-                    if type(OrigIdx) == "string" then
-                        if Rec.Method == "AddToggle" then
-                            Orig = Toggles[OrigIdx] or Options[OrigIdx]
-                        elseif Rec.Method == "AddSlider" or Rec.Method == "AddDropdown" or Rec.Method == "AddInput" then
-                            Orig = Options[OrigIdx]
-                        end
-                    end
-
-                    if typeof(Orig) == "table" and Mirror ~= Orig then
-                        pcall(function()
-                            Library:BindElements(Orig, Mirror)
-                        end)
-                    end
-
-                    --// Keypickers / colorpickers are added ON the element
-                    --// (Toggle:AddKeyPicker), not on the groupbox - replay them here
-                    --// so they show up in the pop-out too \\--
-                    if typeof(Orig) == "table" and type(Orig.RecordedAddons) == "table" then
-                        for _, AddonRec in next, Orig.RecordedAddons do
-                            local AddonArgs = {}
-                            for i = 1, (AddonRec.Args.n or #AddonRec.Args) do
-                                AddonArgs[i] = AddonRec.Args[i]
-                            end
-
-                            local AddonOrigIdx = AddonArgs[1]
-
-                            -- hidden keybinds (NoUI) stay hidden
-                            if type(AddonArgs[2]) ~= "table" or AddonArgs[2].NoUI then
-                                continue
-                            end
-
-                            if type(AddonArgs[1]) == "string" then
-                                AddonArgs[1] = AddonArgs[1] .. "_popout"
-                            end
-
-                            -- the original's callbacks fire through the sync below,
-                            -- so the mirror copy itself stays silent
-                            AddonArgs[2] = table.clone(AddonArgs[2])
-                            AddonArgs[2].Callback = nil
-                            AddonArgs[2].ChangedCallback = nil
-                            AddonArgs[2].Clicked = nil
-
-                            local AddonMethod = Library.__BaseAddonsFuncs and Library.__BaseAddonsFuncs[AddonRec.Method]
-                            if type(AddonMethod) ~= "function" then
-                                continue
-                            end
-
-                            -- start the mirror at the addon's live value
-                            local AddonOrig = (type(AddonOrigIdx) == "string") and Options[AddonOrigIdx] or nil
-                            if typeof(AddonOrig) == "table" then
-                                AddonArgs[2].Default = AddonOrig.Value
-                                if AddonRec.Method == "AddColorPicker" then
-                                    AddonArgs[2].Transparency = AddonOrig.Transparency
-                                end
-                            end
-
-                            local AddonOk = pcall(function()
-                                AddonMethod(Mirror, table.unpack(AddonArgs, 1, #AddonArgs))
-                            end)
-
-                            if AddonOk then
-                                local AddonMirror = (type(AddonArgs[1]) == "string") and Options[AddonArgs[1]] or nil
-
-                                if typeof(AddonOrig) == "table" and typeof(AddonMirror) == "table" and AddonOrig ~= AddonMirror then
-                                    pcall(function()
-                                        Library:BindAddonElements(AddonOrig, AddonMirror)
-                                    end)
-                                end
-                            end
-                        end
+                    if Library:MirrorRecordIntoPanel(Panel, Rec) then
+                        Mirrored = Mirrored + 1
                     end
                 end
 
@@ -10373,7 +10254,7 @@ end
 
                 -- Render fix: raise content above the popout frames + size the canvas.
                 pcall(function()
-                    Library:RefreshPopoutLayout(Panel)
+                    Library:FitPopoutToContent(Panel)
                 end)
 
                 print("[Linoria Popout] Recorded="..#Recorded.." Mirrored="..Mirrored)
@@ -10383,10 +10264,6 @@ end
 
                 if type(Groupbox.Resize) == "function" then
                     Groupbox:Resize()
-                end
-
-                if type(Panel.Resize) == "function" then
-                    Panel:Resize()
                 end
 
                 return Panel
@@ -11031,10 +10908,26 @@ do
 
                     if not IsMirror then
                         Self.RecordedElements = Self.RecordedElements or {}
-                        table.insert(Self.RecordedElements, {
+                        local Rec = {
                             Method = MethodName;
                             Args = Args;
-                        })
+                        }
+
+                        table.insert(Self.RecordedElements, Rec)
+
+                        --// If this groupbox already has a live pop-out, drop the
+                        --// new element into it too so nothing stays hidden.
+                        if typeof(Self._PopoutPanel) == "table" and not Self._PopoutPanel.Destroyed then
+                            local Panel = Self._PopoutPanel
+
+                            task.defer(function()
+                                if typeof(Panel) == "table" and not Panel.Destroyed then
+                                    if Library:MirrorRecordIntoPanel(Panel, Rec) then
+                                        Library:FitPopoutToContent(Panel)
+                                    end
+                                end
+                            end)
+                        end
                     end
                 end
 
@@ -11186,11 +11079,216 @@ function Library:BindElements(A, B)
         end
     end
 
+    --// Some elements (dropdowns) assign .Value directly and then fire Changed
+    --// without ever calling SetValue, so the setter wrappers above miss them.
+    --// Chaining Changed catches those and keeps both copies in sync.
+    local ElementType = (type(A.Type) == "string" and A.Type) or (type(B.Type) == "string" and B.Type)
+    if ElementType and ElementType ~= "KeyPicker" and ElementType ~= "ColorPicker" then
+        if type(A.Changed) == "function" and A._BindChangedTo ~= B then
+            local APrev = A.Changed
+            A._BindChangedTo = B
+            A.Changed = function(Value, ...)
+                APrev(Value, ...)
+
+                if not Group.Syncing then
+                    Group.Syncing = true
+                    pcall(function() B[SetterName](B, Value) end)
+                    Group.Syncing = false
+                end
+            end
+        end
+
+        if type(B.Changed) == "function" and B._BindChangedTo ~= A then
+            local BPrev = B.Changed
+            B._BindChangedTo = A
+            B.Changed = function(Value, ...)
+                BPrev(Value, ...)
+
+                if not Group.Syncing then
+                    Group.Syncing = true
+                    pcall(function() A[SetterName](A, Value) end)
+                    Group.Syncing = false
+                end
+            end
+        end
+    end
+
     -- The mirror starts in sync with the original's live value
     if A.Value ~= nil then
         Group.Syncing = true
         pcall(function() MirrorSetter(B, A.Value) end)
         Group.Syncing = false
+    end
+end
+
+--// Mirror a single recorded element into a pop-out panel. Used both when the
+--// panel is first created and when new elements are added to a groupbox that
+--// already has a live pop-out, so nothing is ever left behind.
+function Library:MirrorRecordIntoPanel(Panel, Rec)
+    if typeof(Panel) ~= "table" or typeof(Rec) ~= "table" or type(Rec.Method) ~= "string" then
+        return false
+    end
+
+    local Args = {}
+    for i = 1, (Rec.Args.n or #Rec.Args) do
+        Args[i] = Rec.Args[i]
+    end
+
+    local OrigIdx = Rec.Args[1]
+
+    -- Unique index so the mirror never overwrites Toggles/Options.
+    -- ONLY for element types whose first arg is an ID (not visible text).
+    local IdxMethods = {
+        AddToggle = true; AddSlider = true; AddDropdown = true;
+        AddInput = true; AddKeyPicker = true; AddColorPicker = true;
+    }
+    if IdxMethods[Rec.Method] and type(Args[1]) == "string" then
+        Args[1] = Args[1] .. "_popout"
+    end
+
+    -- Start the mirror at the element's live value
+    if type(Args[2]) == "table" and type(OrigIdx) == "string" then
+        local OrigElement = (Rec.Method == "AddToggle" and (Toggles[OrigIdx] or Options[OrigIdx])) or Options[OrigIdx]
+        if typeof(OrigElement) == "table" then
+            Args[2] = table.clone(Args[2])
+            if OrigElement.Value ~= nil then
+                Args[2].Default = OrigElement.Value
+            end
+
+            -- The original keeps the user's callbacks; the mirror must stay silent
+            -- so using it pushes to the original (via BindElements) instead of
+            -- firing the user's callback twice.
+            local ValueType = Rec.Method == "AddToggle" or Rec.Method == "AddSlider" or Rec.Method == "AddDropdown" or Rec.Method == "AddInput"
+            if ValueType then
+                Args[2].Callback = nil
+                Args[2].Changed = nil
+            end
+        end
+    end
+
+    local MethodFn = (Panel and Panel[Rec.Method]) or (Library.__BaseGroupboxFuncs and Library.__BaseGroupboxFuncs[Rec.Method])
+
+    if type(MethodFn) ~= "function" then
+        return false
+    end
+
+    local ok, Mirror = pcall(function()
+        return MethodFn(Panel, table.unpack(Args, 1, #Args))
+    end)
+
+    if not ok or typeof(Mirror) ~= "table" then
+        return false
+    end
+
+    local Orig = nil
+    if type(OrigIdx) == "string" then
+        if Rec.Method == "AddToggle" then
+            Orig = Toggles[OrigIdx] or Options[OrigIdx]
+        elseif Rec.Method == "AddSlider" or Rec.Method == "AddDropdown" or Rec.Method == "AddInput" then
+            Orig = Options[OrigIdx]
+        end
+    end
+
+    if typeof(Orig) == "table" and Mirror ~= Orig then
+        pcall(function()
+            Library:BindElements(Orig, Mirror)
+        end)
+    end
+
+    --// Keypickers / colorpickers are added ON the element (Toggle:AddKeyPicker),
+    --// not on the groupbox - replay them here so they show up in the pop-out too \\--
+    if typeof(Orig) == "table" and type(Orig.RecordedAddons) == "table" then
+        for _, AddonRec in next, Orig.RecordedAddons do
+            local AddonArgs = {}
+            for i = 1, (AddonRec.Args.n or #AddonRec.Args) do
+                AddonArgs[i] = AddonRec.Args[i]
+            end
+
+            local AddonOrigIdx = AddonArgs[1]
+
+            -- hidden keybinds (NoUI) stay hidden
+            if type(AddonArgs[2]) ~= "table" or AddonArgs[2].NoUI then
+                continue
+            end
+
+            if type(AddonArgs[1]) == "string" then
+                AddonArgs[1] = AddonArgs[1] .. "_popout"
+            end
+
+            -- the original's callbacks fire through the sync below,
+            -- so the mirror copy itself stays silent
+            AddonArgs[2] = table.clone(AddonArgs[2])
+            AddonArgs[2].Callback = nil
+            AddonArgs[2].ChangedCallback = nil
+            AddonArgs[2].Clicked = nil
+
+            local AddonMethod = Library.__BaseAddonsFuncs and Library.__BaseAddonsFuncs[AddonRec.Method]
+            if type(AddonMethod) ~= "function" then
+                continue
+            end
+
+            -- start the mirror at the addon's live value
+            local AddonOrig = (type(AddonOrigIdx) == "string") and Options[AddonOrigIdx] or nil
+            if typeof(AddonOrig) == "table" then
+                AddonArgs[2].Default = AddonOrig.Value
+                if AddonRec.Method == "AddColorPicker" then
+                    AddonArgs[2].Transparency = AddonOrig.Transparency
+                end
+            end
+
+            local AddonOk = pcall(function()
+                AddonMethod(Mirror, table.unpack(AddonArgs, 1, #AddonArgs))
+            end)
+
+            if AddonOk then
+                local AddonMirror = (type(AddonArgs[1]) == "string") and Options[AddonArgs[1]] or nil
+
+                if typeof(AddonOrig) == "table" and typeof(AddonMirror) == "table" and AddonOrig ~= AddonMirror then
+                    pcall(function()
+                        Library:BindAddonElements(AddonOrig, AddonMirror)
+                    end)
+                end
+            end
+        end
+    end
+
+    return true
+end
+
+--// Grow a pop-out so all of its content is reachable (never hides elements
+--// behind the bottom edge), then refresh the layout/canvas.
+function Library:FitPopoutToContent(Panel)
+    if typeof(Panel) ~= "table" or Panel.Destroyed then
+        return
+    end
+
+    pcall(function()
+        Library:RefreshPopoutLayout(Panel)
+    end)
+
+    pcall(function()
+        if type(Panel.Resize) == "function" then
+            Panel:Resize()
+        end
+    end)
+
+    local Content = Panel.Container or Panel.Content
+    local Outer = Panel.Outer
+
+    if typeof(Content) == "Instance" and typeof(Outer) == "Instance" then
+        local Layout = Content:FindFirstChildOfClass("UIListLayout")
+        local Needed = if Layout then Layout.AbsoluteContentSize.Y else 0
+
+        local Current = Outer.AbsoluteSize.Y
+        local Wanted = math.clamp(Needed + 64, 120, 620)
+
+        if Needed > 0 and Wanted > Current + 4 then
+            Outer.Size = UDim2.fromOffset(Outer.AbsoluteSize.X, Wanted)
+
+            pcall(function()
+                Library:RefreshPopoutLayout(Panel)
+            end)
+        end
     end
 end
 
