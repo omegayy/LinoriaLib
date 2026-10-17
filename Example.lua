@@ -736,6 +736,10 @@ MenuGroup:AddButton("Unload", function() Library:Unload() end)
 
 Library.ToggleKeybind = Options.MenuKeybind -- Allows you to have a custom keybind for the menu
 
+--// The little pop-out button (the "P" in the top-right of a groupbox title)
+--// turns any groupbox into a floating panel you can put anywhere on screen:
+--// Tabs.Main:AddLeftGroupbox("Some Box"):Popout()
+
 -- =====================================================================
 -- NEWEST FEATURES
 -- =====================================================================

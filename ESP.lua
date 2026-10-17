@@ -129,8 +129,29 @@ function ESP.new(Options)
 	self.Objects = {}
 	self.Tracked = {}
 	self.Connections = {}
-	self.Folder = Options.Folder or (game:GetService("CoreGui"):FindFirstChild("ESP") or Instance.new("Folder", game:GetService("CoreGui")))
+	self.Folder = Options.Folder or Instance.new("Folder")
+	if not self.Folder.Name then
+		self.Folder.Name = "ESP"
+	end
+
+	local Ok, RootGui = pcall(function()
+		return game:GetService("CoreGui")
+	end)
+
+	if not Ok then
+		RootGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+	end
+
 	self.Folder.Name = "ESP"
+	self.Folder.Parent = RootGui
+
+	self.TracerGui = Instance.new("ScreenGui")
+	self.TracerGui.Name = "ESPTracers"
+	self.TracerGui.IgnoreGuiInset = true
+	self.TracerGui.ResetOnSpawn = false
+	self.TracerGui.DisplayOrder = 999
+	self.TracerGui.Parent = self.Folder.Parent
+
 	self.Running = false
 	return self
 end
@@ -251,7 +272,7 @@ function ESP:Add(Target, Overrides)
 	Tracer.Size = UDim2.new(0, 0, 0, 1)
 	Tracer.Visible = self.ShowTracer
 	Tracer.ZIndex = 0
-	Tracer.Parent = self.Folder
+	Tracer.Parent = self.TracerGui
 
 	Entry.Gui = Main
 	Entry.Box = Box
@@ -399,7 +420,7 @@ function ESP:TrackPlayers()
 				if Entry.Tracer and self.ShowTracer then
 					Entry.Tracer.Visible = true
 					Entry.Tracer.BackgroundColor3 = Entry.Color or self.Color
-					local Screen = self.Folder.Parent
+						local Screen = self.TracerGui
 					if Screen and Screen:IsA("ScreenGui") then
 						local Abs = Screen.AbsoluteSize
 						local MidX = Abs.X * 0.5
@@ -437,6 +458,9 @@ function ESP:Destroy()
 		pcall(function() c:Disconnect() end)
 	end
 	table.clear(self.Connections)
+	if self.TracerGui then
+		self.TracerGui:Destroy()
+	end
 	if self.Folder then
 		self.Folder:Destroy()
 	end
@@ -493,6 +517,7 @@ function ESP:Preview(Parent)
 
 	Model.Parent = Viewport
 	Model.PrimaryPart = Model:FindFirstChild("UpperTorso")
+	Camera.CFrame = CFrame.lookAt(Vector3.new(0.4, 0.9, 9), Vector3.new(0.4, 0.7, 0))
 
 	-- The ESP overlay itself. Rendered with plain Frames so it works
 	-- everywhere the ESP plugin gets Preview()ed (menus included).

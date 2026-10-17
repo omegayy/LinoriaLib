@@ -9336,6 +9336,80 @@ end
             Groupbox.Container = Container
             setmetatable(Groupbox, BaseGroupbox)
 
+            --// Little pop-out button (top right of the groupbox title) that
+            -- detaches this groupbox into a floating panel on screen \\--
+            local PopoutButton = Library:Create("TextButton", {
+                BackgroundColor3 = Library.MainColor;
+                BorderColor3 = Library.OutlineColor;
+                BorderMode = Enum.BorderMode.Inset;
+                AutoButtonColor = false;
+                Font = Library.Font;
+                TextColor3 = Library.FontColor;
+                TextSize = 10;
+                Text = "P";
+                Size = UDim2.new(0, 14, 0, 14);
+                Position = UDim2.new(1, -18, 0, 3);
+                ZIndex = 6;
+                Parent = BoxInner;
+            })
+
+            Library:AddToRegistry(PopoutButton, {
+                BackgroundColor3 = "MainColor";
+                BorderColor3 = "OutlineColor";
+                TextColor3 = "FontColor";
+            })
+
+            Library:OnHighlight(PopoutButton, PopoutButton,
+                { BorderColor3 = "AccentColor" },
+                { BorderColor3 = "OutlineColor" },
+                function() return true end
+            )
+
+            function Groupbox:Popout(Info)
+                Info = Info or {}
+
+                if typeof(Groupbox._PopoutPanel) == "table" and not Groupbox._PopoutPanel.Destroyed then
+                    Groupbox._PopoutPanel:SetVisible(true)
+                    return Groupbox._PopoutPanel
+                end
+
+                local Panel = Library:CreatePopout({
+                    Title = Info.Title or Info.Name or Info.Name,
+                    Size = Info.Size or UDim2.fromOffset(280, 0),
+                    Position = Info.Position or UDim2.fromOffset(160, 160),
+                    Visible = true,
+                    ShowWhenMenuClosed = true,
+                    Resizable = true,
+                })
+
+                local Children = Groupbox.Container:GetChildren()
+                for _, Element in next, Children do
+                    if not Element:IsA("UIListLayout") then
+                        Element.Parent = Panel.Container
+                    end
+                end
+
+                Groupbox.Controls = Panel
+                Groupbox._PopoutPanel = Panel
+                Groupbox:Resize()
+                Panel:Resize()
+                return Panel
+            end
+
+            PopoutButton.MouseButton1Click:Connect(function()
+                if Library.Unloaded then
+                    return
+                end
+
+                PopoutButton.MouseButton1Click:Connect(function()
+                    if Library.Unloaded then
+                        return
+                    end
+
+                    Groupbox:Popout()
+                end)
+            end)
+
             Groupbox:AddBlank(3)
             Groupbox:Resize()
 
