@@ -1714,7 +1714,7 @@ do
                 AutoButtonColor = false;
                 BackgroundTransparency = 1;
                 Position = UDim2.new(1, -2, 0.5, 0);
-                Size = UDim2.new(0, 14, 0, 14);
+                Size = UDim2.new(0, 16, 0, 16);
                 Text = "";
                 ZIndex = 113;
                 Parent = KeybindsToggleContainer;
@@ -1732,7 +1732,7 @@ do
                     RowHideButton.Text = "[+]"
                 end
                 RowHideButton.Font = Library.Font
-                RowHideButton.TextSize = 9
+                RowHideButton.TextSize = 10
                 RowHideButton.TextColor3 = KeyPicker.ShowInKeybinds == false and Library.FontColor or Library.OutlineColor
             end
 
@@ -8330,6 +8330,10 @@ do
                     local Key = Option.Text
                     if type(Key) == "string" and Key ~= "" and Library.KeybindFilters.HiddenKeybinds[Key] == true then
                         Option.ShowInKeybinds = false
+                    end
+
+                    if type(Option.UpdateHideButton) == "function" then
+                        pcall(Option.UpdateHideButton)
                     end
                 end
             end
