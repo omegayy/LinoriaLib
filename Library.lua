@@ -7110,7 +7110,7 @@ do
         local SettingsOuter = Library:Create("Frame", {
             AnchorPoint = Vector2.new(1, 0);
             Position = UDim2.new(1, -3, 0, 22);
-            Size = UDim2.fromOffset(190, 126);
+            Size = UDim2.fromOffset(190, 144);
             BackgroundColor3 = Color3.new(0, 0, 0);
             BorderColor3 = Color3.new(0, 0, 0);
             Visible = false;
@@ -7260,7 +7260,7 @@ do
                 LayoutOrder = NextOrder();
                 Size = UDim2.new(1, 0, 0, 18);
                 Font = Library.Font;
-                Text = "Transparency: 0%";
+                Text = "Transparency (click): 0%";
                 TextColor3 = Library.FontColor;
                 TextSize = 13;
                 ZIndex = 212;
@@ -7281,7 +7281,7 @@ do
                 LevelIdx = (LevelIdx % #Levels) + 1
                 local Value = Levels[LevelIdx]
                 Popout:SetTransparency(Value)
-                TransparencyRow.Text = string.format("Transparency: %d%%", math.floor(Value * 100 + 0.5))
+                TransparencyRow.Text = string.format("Transparency (click): %d%%", math.floor(Value * 100 + 0.5))
             end)
         end
 
