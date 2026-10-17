@@ -6861,6 +6861,7 @@ do
 
         if Success then
             TryWriteFile(Encoded)
+            -- Library:Notify(string.format("Saved %d popout layout(s).", #Library.Popouts), 2)
         end
     end
 
@@ -6883,10 +6884,6 @@ do
                     Count = Count + 1
                 end
             end
-        end
-
-        if Count > 0 then
-            Library:Notify(string.format("Restored %d popout layout(s).", Count), 2)
         end
     end
 
