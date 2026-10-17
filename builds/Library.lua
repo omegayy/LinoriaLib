@@ -7027,6 +7027,7 @@ do
             ShowWhenTab = typeof(Info.ShowWhenTab) == "string" and Info.ShowWhenTab or nil;
             Resizable = if typeof(Info.Resizable) == "boolean" then Info.Resizable else true;
             Locked = false;
+            Transparency = 0;
             Destroyed = false;
             Keybind = typeof(Info.Keybind) == "string" and Info.Keybind or nil;
         }
