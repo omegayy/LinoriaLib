@@ -9457,41 +9457,41 @@ end
                     end
                 end
 
-                -- Unconditional clone: make sure the popout shows content
-                local Target = Panel.Container or Panel.Content or Panel.Inner
+                -- Clone fallback only if NOTHING could be re-created via the API
+                -- (avoids duplicating the mirrored elements).
+                if Mirrored == 0 then
+                    local Target = Panel.Container or Panel.Content or Panel.Inner
 
-                if typeof(Target) ~= "Instance" then
-                    Target = (Panel.Outer and Panel.Outer.Parent) or Panel.Outer or Panel
-                end
+                    if typeof(Target) ~= "Instance" then
+                        Target = (Panel.Outer and Panel.Outer.Parent) or Panel.Outer or Panel
+                    end
 
-                for _, Element in next, Groupbox.Container:GetChildren() do
-                    if Element:IsA("UIListLayout") then
-                        continue
+                    for _, Element in next, Groupbox.Container:GetChildren() do
+                        if Element:IsA("UIListLayout") then
+                            continue
+                        end
+
+                        pcall(function()
+                            local Copy = Element:Clone()
+                            Copy.Visible = true
+                            Copy.Parent = Target
+                        end)
                     end
 
                     pcall(function()
-                        local Copy = Element:Clone()
-                        Copy.Visible = true
-                        Copy.Parent = Target
+                        if typeof(Target) == "Instance" and Target:IsA("ScrollingFrame") then
+                            local Total = 0
+                            for _, Child in next, Target:GetChildren() do
+                                if not Child:IsA("UIListLayout") and not Child:IsA("UIGridLayout") then
+                                    Total = Total + 26 + 4
+                                end
+                            end
+                            Target.CanvasSize = UDim2.fromOffset(0, math.max(Total + 16, 120))
+                        end
                     end)
                 end
 
-                -- The content is a ScrollingFrame; force its canvas to fit so the
-                -- cloned children aren't clipped out of view.
-                pcall(function()
-                    if typeof(Target) == "Instance" and Target:IsA("ScrollingFrame") then
-                        local Total = 0
-                        for _, Child in next, Target:GetChildren() do
-                            if not Child:IsA("UIListLayout") and not Child:IsA("UIGridLayout") then
-                                Total = Total + 26 + 4
-                            end
-                        end
-                        Target.CanvasSize = UDim2.fromOffset(0, math.max(Total + 16, 120))
-                        Target.ScrollingDirection = Enum.ScrollingDirection.Y
-                    end
-                end)
-
-                print("[Linoria Popout] Recorded="..#Recorded.." Mirrored="..Mirrored.." FallbackCloned="..(Target and "yes" or "no"))
+                print("[Linoria Popout] Recorded="..#Recorded.." Mirrored="..Mirrored.."
 
                 Groupbox.Controls = Panel
                 Groupbox._PopoutPanel = Panel
