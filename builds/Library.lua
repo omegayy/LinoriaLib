@@ -2091,7 +2091,9 @@ do
             local modCount = GetTableSize(KeyPicker.Modifiers)
             KeyPicker.DisplayValue = if modCount > 0 then (table.concat(KeyPicker.Modifiers, " + ") .. " + " .. tostring(KeyPicker.Value)) else tostring(KeyPicker.Value)
 
-            DisplayLabel.Text = KeyPicker.DisplayValue
+            if typeof(DisplayLabel) == "Instance" then
+                DisplayLabel.Text = KeyPicker.DisplayValue
+            end
 
             if Mode ~= nil and ModeButtons[Mode] ~= nil then 
                 ModeButtons[Mode]:Select()
