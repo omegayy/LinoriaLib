@@ -9489,6 +9489,7 @@ end
                     return
                 end
 
+                -- Always create/focus popout; don't drop children silently.
                 Groupbox:Popout()
             end)
 
