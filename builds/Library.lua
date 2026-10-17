@@ -6879,6 +6879,7 @@ do
 
     function Library:ApplyPopoutLayouts()
         if typeof(Library.PopoutLayout) ~= "table" then
+            print("[Popout] No PopoutLayout to apply")
             return
         end
 
@@ -6897,6 +6898,8 @@ do
                 end
             end
         end
+
+        print("[Popout] Applied " .. Count .. " layout(s) to " .. #Library.Popouts .. " popout(s)")
     end
 
     function Library:UpdatePopouts()
@@ -7606,8 +7609,8 @@ do
         end
 
         function Popout:Save()
+            print("[Popout] Saving layout for: " .. tostring(Popout.Name))
             Library:SavePopouts()
-            -- Library:Notify("Saved layout: " .. tostring(Popout.Name), 2)
         end
 
         function Popout:ApplyLayout(Saved)
