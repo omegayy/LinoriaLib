@@ -9491,6 +9491,26 @@ end
                     end)
                 end
 
+                -- ALWAYS size the popout's content canvas (there's no Window around
+                -- it to do this like in the main menu) or the mirrored elements get
+                -- clipped out of view entirely.
+                pcall(function()
+                    local Content = Panel.Container or Panel.Content
+                    if typeof(Content) == "Instance" and Content:IsA("ScrollingFrame") then
+                        local Layout = Content:FindFirstChildOfClass("UIListLayout")
+                        local Height = if Layout then Layout.AbsoluteContentSize.Y else 0
+                        if Height < 120 then
+                            Height = 0
+                            for _, Child in next, Content:GetChildren() do
+                                if not Child:IsA("UIListLayout") and not Child:IsA("UIGridLayout") then
+                                    Height = Height + 30
+                                end
+                            end
+                        end
+                        Content.CanvasSize = UDim2.fromOffset(0, Height + 16)
+                    end
+                end)
+
                 print("[Linoria Popout] Recorded="..#Recorded.." Mirrored="..Mirrored)
 
                 Groupbox.Controls = Panel
