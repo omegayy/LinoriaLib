@@ -210,7 +210,7 @@ function ESP:Add(Target, Overrides)
 	Name.TextSize = 14
 	Name.TextColor3 = self.TextColor
 	Name.TextStrokeTransparency = 0.4
-	Name.TextXAlignment = Enum.TextAlignment.Left
+	Name.TextXAlignment = Enum.TextXAlignment.Left
 	Name.Text = Overrides.Name or Key
 	Name.Visible = self.ShowName
 	Name.Parent = Main
@@ -224,7 +224,7 @@ function ESP:Add(Target, Overrides)
 	Health.TextSize = 12
 	Health.TextColor3 = self.TextColor
 	Health.TextStrokeTransparency = 0.4
-	Health.TextXAlignment = Enum.TextAlignment.Left
+	Health.TextXAlignment = Enum.TextXAlignment.Left
 	Health.Text = "HP: -"
 	Health.Visible = self.ShowHealth
 	Health.Parent = Main
@@ -238,7 +238,7 @@ function ESP:Add(Target, Overrides)
 	Dist.TextSize = 12
 	Dist.TextColor3 = self.TextColor
 	Dist.TextStrokeTransparency = 0.4
-	Dist.TextXAlignment = Enum.TextAlignment.Left
+	Dist.TextXAlignment = Enum.TextXAlignment.Left
 	Dist.Text = "[0m]"
 	Dist.Visible = self.ShowDistance
 	Dist.Parent = Main
