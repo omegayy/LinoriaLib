@@ -1072,6 +1072,7 @@ function Library:GetSearchEntryPopout(Entry)
             return Popout
         end
 
+
         Node = Node.Parent
     end
 
@@ -7483,7 +7484,7 @@ do
             end
 
             if typeof(Saved.Transparency) == "number" then
-                Popout:SetTransparency(Saved.Transparency)
+                Popout.Transparency = Saved.Transparency
             end
 
             if typeof(Saved.Resizable) == "boolean" then
@@ -7543,6 +7544,7 @@ do
 
             return Popout
         end
+
 
         function Popout:Destroy()
             Popout.Destroyed = true
@@ -7676,6 +7678,7 @@ do
             return Popout
         end
 
+
         --// Individual background transparency for this pop-out (0 = opaque, 1 = invisible)
         function Popout:SetTransparency(Value)
             Popout.Transparency = typeof(Value) == "number" and math.clamp(Value, 0, 1) or 0
@@ -7706,6 +7709,14 @@ do
             end
 
             return Popout
+        end
+
+
+        --// Apply any transparency restored from the saved layout \\--
+        if typeof(Popout.Transparency) == "number" and Popout.Transparency > 0 then
+            pcall(function()
+                Popout:SetTransparency(Popout.Transparency)
+            end)
         end
 
         Popout.Outer = Outer
