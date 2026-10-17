@@ -9373,6 +9373,15 @@ end
                     return Groupbox._PopoutPanel
                 end
 
+                if Info.Title == nil then
+                    for _, Inst in next, BoxInner:GetChildren() do
+                        if Inst:IsA("TextLabel") and Inst.Text ~= "" then
+                            Info.Title = Inst.Text
+                            break
+                        end
+                    end
+                end
+
                 local Panel = Library:CreatePopout({
                     Title = Info.Title or Info.Name or Info.Name,
                     Size = Info.Size or UDim2.fromOffset(280, 0),
@@ -9385,7 +9394,10 @@ end
                 local Children = Groupbox.Container:GetChildren()
                 for _, Element in next, Children do
                     if not Element:IsA("UIListLayout") then
-                        Element.Parent = Panel.Container
+                        -- COPY the elements: the original groupbox keeps its
+                        -- contents, the panel gets a working-looking copy.
+                        local Copy = Element:Clone()
+                        Copy.Parent = Panel.Container
                     end
                 end
 
