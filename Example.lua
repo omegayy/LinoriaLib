@@ -5,8 +5,8 @@
                      \ V  V / (_| | |  | | | | | | | | (_| |                    
                       \_/\_/ \__,_|_|  |_| |_|_|_| |_|\__, |                    
                                                       |___/                     
-      this example file is missing a lot of stuff and its pretty outdated       
-               i recommend using the documentation for Obsidian:                
+        this example is kept up to date with the newest library features       
+          (search, popout windows, dialogs, media elements and more)           
                         https://docs.mspaint.cc/obsidian                        
                                                                                 
               a lot of stuff is very similar but it's not the same              
@@ -19,7 +19,7 @@
       https://github.com/violin-suzutsuki/LinoriaLib/blob/main/Example.lua                
 --]]
 
-local repo = "https://raw.githubusercontent.com/mstudio45/LinoriaLib/main/"
+local repo = "https://raw.githubusercontent.com/omegayy/LinoriaLib/main/"
 
 local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
 local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
@@ -723,6 +723,453 @@ MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", { Default = "RightSh
 MenuGroup:AddButton("Unload", function() Library:Unload() end)
 
 Library.ToggleKeybind = Options.MenuKeybind -- Allows you to have a custom keybind for the menu
+
+-- =====================================================================
+-- NEWEST FEATURES
+-- =====================================================================
+-- The library now has a SEARCH BOX built into the window title bar (top-right).
+-- Every element you create is indexed automatically - just start typing.
+-- Clicking a result jumps to the element and flashes it. Elements hidden behind
+-- a toggle/dropdown (Dependency Box) are revealed for you automatically too.
+
+-- You can also register your own searchable entries:
+Library:AddSearchEntry({
+	Text = "Custom Search Entry",
+	Type = "Example",
+	Keywords = "custom search demo example", -- extra words that should match this entry
+	Callback = function()
+		Library:Notify("You navigated to the custom search entry!")
+	end,
+})
+
+-- ...and search programmatically with Library:Search("query")
+
+local FeaturesTab = Window:AddTab("New Features")
+
+local MediaBox = FeaturesTab:AddLeftGroupbox("Media")
+
+-- Groupbox:AddViewport - live 3D preview of a BasePart/Model
+local PreviewPart = Instance.new("Part")
+PreviewPart.Size = Vector3.new(2, 2, 2)
+PreviewPart.Anchored = true
+PreviewPart.Color = Color3.fromRGB(90, 130, 220)
+
+MediaBox:AddViewport("MyViewport", {
+	Object = PreviewPart,
+	Clone = true,          -- clone the object so the original is untouched
+	Interactive = true,    -- allow rotating/zooming with the mouse
+	AutoFocus = true,      -- frame the object on creation
+	Height = 180,
+	Visible = true,
+})
+
+-- Groupbox:AddImage
+MediaBox:AddImage("MyImage", {
+	Image = "rbxassetid://6031075931",
+	Height = 120,
+	Color = Color3.new(1, 1, 1),
+	Transparency = 0,
+	RectOffset = Vector2.zero,
+	RectSize = Vector2.zero,
+	BackgroundTransparency = 0,
+	ScaleType = Enum.ScaleType.Fit,
+	Visible = true,
+})
+
+-- Groupbox:AddVideo (put a valid rbxassetid video id in `Video`)
+MediaBox:AddVideo("MyVideo", {
+	Video = "",
+	Height = 160,
+	Looped = true,
+	Playing = false,
+	Volume = 0,
+	Visible = true,
+})
+
+-- Groupbox:AddUIPassthrough - embed any GuiObject straight into the groupbox
+local PassthroughFrame = Instance.new("Frame")
+PassthroughFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+PassthroughFrame.Size = UDim2.fromScale(1, 1)
+
+MediaBox:AddUIPassthrough("MyPass", {
+	Instance = PassthroughFrame,
+	Height = 80,
+	Visible = true,
+})
+
+local MiscBox = FeaturesTab:AddRightGroupbox("More Elements")
+
+-- Groupbox:AddBlank & a titled divider
+MiscBox:AddBlank(16)
+MiscBox:AddDivider("Advanced options")
+
+-- DependencyGroupbox: an entire sub-groupbox that only shows when dependencies are met
+MiscBox:AddToggle("AdvDeps", { Text = "Unlock advanced options", Default = false })
+local AdvGroupbox = MiscBox:AddDependencyGroupbox()
+AdvGroupbox:AddSlider("AdvSlider", { Text = "Advanced slider", Default = 25, Min = 0, Max = 100, Rounding = 0 })
+AdvGroupbox:AddDropdown("AdvDropdown", { Text = "Advanced dropdown", Values = { "a", "b", "c" }, Default = 1 })
+AdvGroupbox:SetupDependencies({
+	{ Toggles.AdvDeps, true },
+})
+
+-- The newest notification format (a table) + configurable side
+MiscBox:AddButton({
+	Text = "Rich notification",
+	Func = function()
+		Library:Notify({
+			Title = "Hello!",
+			Description = "This is the newest notification format.",
+			Time = 4,
+		})
+	end,
+})
+
+-- Dialogs (modal confirmations / prompts)
+MiscBox:AddButton({
+	Text = "Open a dialog",
+	Func = function()
+		Window:AddDialog("ExampleDialog", {
+			Title = "Delete everything?",
+			Description = "Dialogs support footer buttons with variants, ordering and wait timers.",
+			OutsideClickDismiss = true,
+			FooterButtons = {
+				{ Id = "Cancel", Title = "Cancel", Variant = "Secondary", Order = 1 },
+				{ Id = "Confirm", Title = "Confirm", Variant = "Destructive", Order = 2, Callback = function()
+					Library:Notify("Confirmed!")
+				end },
+				{ Id = "Timed", Title = "Wait 3s", Variant = "Primary", Order = 3, WaitTime = 3, Callback = function()
+					Library:Notify("Timed button pressed")
+				end },
+			},
+		})
+	end,
+})
+
+-- =====================================================================
+-- ESP PREVIEW (custom UI embedded with AddUIPassthrough)
+-- =====================================================================
+-- An ESP "preview" is totally possible. Here we build a mock ESP out of plain
+-- Frames over a 2D dummy, then embed it into the menu with
+-- Groupbox:AddUIPassthrough. The options underneath update it live.
+-- The same trick works for anything custom (graphs, player lists, crosshairs..)
+local EspGroup = FeaturesTab:AddRightGroupbox("ESP Preview")
+
+local function BuildESPPreview()
+	local Root = Instance.new("Frame")
+	Root.BackgroundColor3 = Color3.fromRGB(18, 18, 21)
+	Root.BorderSizePixel = 0
+	Root.Size = UDim2.fromScale(1, 1)
+
+	local Scene = Instance.new("Frame")
+	Scene.BackgroundTransparency = 1
+	Scene.Size = UDim2.fromScale(1, 1)
+	Scene.Parent = Root
+
+	-- 2D "dummy" silhouette
+	local Dummy = Instance.new("Frame")
+	Dummy.BackgroundTransparency = 1
+	Dummy.AnchorPoint = Vector2.new(0.5, 0.5)
+	Dummy.Position = UDim2.fromScale(0.5, 0.5)
+	Dummy.Size = UDim2.fromScale(0.4, 0.6)
+	Dummy.Parent = Scene
+
+	local BodyColor = Color3.fromRGB(72, 72, 80)
+
+	local function BodyPart(Size, Position, Roundness)
+		local Part = Instance.new("Frame")
+		Part.BackgroundColor3 = BodyColor
+		Part.BorderSizePixel = 0
+		Part.AnchorPoint = Vector2.new(0.5, 0.5)
+		Part.Size = Size
+		Part.Position = Position
+		Part.Parent = Dummy
+
+		if Roundness then
+			local Corner = Instance.new("UICorner")
+			Corner.CornerRadius = UDim.new(Roundness, 0)
+			Corner.Parent = Part
+		end
+
+		return Part
+	end
+
+	BodyPart(UDim2.fromScale(0.44, 0.2), UDim2.fromScale(0.5, 0.1), 0.5) -- head
+	BodyPart(UDim2.fromScale(0.62, 0.3), UDim2.fromScale(0.5, 0.36))     -- torso
+	BodyPart(UDim2.fromScale(0.16, 0.3), UDim2.fromScale(0.12, 0.36))    -- left arm
+	BodyPart(UDim2.fromScale(0.16, 0.3), UDim2.fromScale(0.88, 0.36))    -- right arm
+	BodyPart(UDim2.fromScale(0.22, 0.34), UDim2.fromScale(0.37, 0.68))   -- left leg
+	BodyPart(UDim2.fromScale(0.22, 0.34), UDim2.fromScale(0.63, 0.68))   -- right leg
+
+	-- ESP box (4 lines + optional fill). Parented to the dummy so it scales too.
+	local Box = Instance.new("Frame")
+	Box.BackgroundTransparency = 1
+	Box.AnchorPoint = Vector2.new(0.5, 0.5)
+	Box.Position = UDim2.fromScale(0.5, 0.5)
+	Box.Size = UDim2.fromScale(1.5, 1.2)
+	Box.Parent = Dummy
+
+	local Fill = Instance.new("Frame")
+	Fill.BackgroundColor3 = Color3.fromRGB(235, 75, 75)
+	Fill.BackgroundTransparency = 0.85
+	Fill.BorderSizePixel = 0
+	Fill.Size = UDim2.fromScale(1, 1)
+	Fill.Parent = Box
+
+	local function BoxLine(Size, Position)
+		local Line = Instance.new("Frame")
+		Line.BackgroundColor3 = Color3.fromRGB(235, 75, 75)
+		Line.BorderSizePixel = 0
+		Line.AnchorPoint = Vector2.new(0.5, 0.5)
+		Line.Size = Size
+		Line.Position = Position
+		Line.Parent = Box
+		return Line
+	end
+
+	local Lines = {
+		BoxLine(UDim2.new(1, 2, 0, 2), UDim2.new(0.5, 0, 0, 0)),
+		BoxLine(UDim2.new(1, 2, 0, 2), UDim2.new(0.5, 0, 1, 0)),
+		BoxLine(UDim2.new(0, 2, 1, 2), UDim2.new(0, 0, 0.5, 0)),
+		BoxLine(UDim2.new(0, 2, 1, 2), UDim2.new(1, 0, 0.5, 0)),
+	}
+
+	-- health bar on the left of the box
+	local HealthBg = Instance.new("Frame")
+	HealthBg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	HealthBg.BackgroundTransparency = 0.4
+	HealthBg.BorderSizePixel = 0
+	HealthBg.AnchorPoint = Vector2.new(1, 0)
+	HealthBg.Position = UDim2.new(0, -5, 0, 0)
+	HealthBg.Size = UDim2.new(0, 4, 1, 0)
+	HealthBg.Parent = Box
+
+	local HealthFill = Instance.new("Frame")
+	HealthFill.BackgroundColor3 = Color3.fromRGB(80, 220, 100)
+	HealthFill.BorderSizePixel = 0
+	HealthFill.AnchorPoint = Vector2.new(0, 1)
+	HealthFill.Position = UDim2.fromScale(0, 1)
+	HealthFill.Size = UDim2.fromScale(1, 0.72)
+	HealthFill.Parent = HealthBg
+
+	local Name = Instance.new("TextLabel")
+	Name.BackgroundTransparency = 1
+	Name.AnchorPoint = Vector2.new(0.5, 1)
+	Name.Position = UDim2.new(0.5, 0, 0, -3)
+	Name.Size = UDim2.new(1, 0, 0, 14)
+	Name.Font = Enum.Font.GothamBold
+	Name.Text = "Player"
+	Name.TextColor3 = Color3.fromRGB(255, 255, 255)
+	Name.TextSize = 13
+	Name.TextStrokeTransparency = 0.5
+	Name.TextXAlignment = Enum.TextXAlignment.Center
+	Name.Parent = Box
+
+	local Distance = Instance.new("TextLabel")
+	Distance.BackgroundTransparency = 1
+	Distance.AnchorPoint = Vector2.new(0.5, 0)
+	Distance.Position = UDim2.new(0.5, 0, 1, 3)
+	Distance.Size = UDim2.new(1, 0, 0, 14)
+	Distance.Font = Enum.Font.Gotham
+	Distance.Text = "[128 studs]"
+	Distance.TextColor3 = Color3.fromRGB(235, 235, 235)
+	Distance.TextSize = 12
+	Distance.TextStrokeTransparency = 0.5
+	Distance.TextXAlignment = Enum.TextXAlignment.Center
+	Distance.Parent = Box
+
+	-- tracer (drawn in scene space, kept aligned after layout)
+	local Tracer = Instance.new("Frame")
+	Tracer.BackgroundColor3 = Color3.fromRGB(235, 75, 75)
+	Tracer.BorderSizePixel = 0
+	Tracer.AnchorPoint = Vector2.new(0.5, 0.5)
+	Tracer.Size = UDim2.fromOffset(0, 1)
+	Tracer.Visible = false
+	Tracer.Parent = Scene
+
+	local Preview = {
+		Root = Root;
+		Scene = Scene;
+		Dummy = Dummy;
+		Box = Box;
+		Fill = Fill;
+		Lines = Lines;
+		HealthBg = HealthBg;
+		HealthFill = HealthFill;
+		Name = Name;
+		Distance = Distance;
+		Tracer = Tracer;
+	}
+
+	function Preview:UpdateTracer()
+		local Origin = Vector2.new(Scene.AbsoluteSize.X * 0.5, Scene.AbsoluteSize.Y)
+		local Target = Vector2.new(
+			Box.AbsolutePosition.X + Box.AbsoluteSize.X * 0.5 - Scene.AbsolutePosition.X,
+			Box.AbsolutePosition.Y + Box.AbsoluteSize.Y - Scene.AbsolutePosition.Y
+		)
+
+		local Delta = Target - Origin
+		local Length = Delta.Magnitude
+
+		if Length < 1 then
+			return
+		end
+
+		local Mid = (Origin + Target) * 0.5
+
+		Tracer.Position = UDim2.fromOffset(Mid.X, Mid.Y)
+		Tracer.Size = UDim2.fromOffset(Length, 1)
+		Tracer.Rotation = math.deg(math.atan2(Delta.Y, Delta.X))
+	end
+
+	return Preview
+end
+
+local Esp = BuildESPPreview()
+
+EspGroup:AddUIPassthrough("EspPreview", {
+	Instance = Esp.Root,
+	Height = 220,
+	Visible = true,
+})
+
+-- Options that drive the preview live
+local EspBox = EspGroup:AddToggle("EspBox", { Text = "Box", Default = true })
+EspBox:OnChanged(function(Value)
+	for _, Line in ipairs(Esp.Lines) do
+		Line.Visible = Value
+	end
+end)
+
+local EspFill = EspGroup:AddToggle("EspFill", { Text = "Box fill", Default = true })
+EspFill:OnChanged(function(Value)
+	Esp.Fill.Visible = Value
+end)
+
+local EspName = EspGroup:AddToggle("EspName", { Text = "Name", Default = true })
+EspName:OnChanged(function(Value)
+	Esp.Name.Visible = Value
+end)
+
+local EspHealth = EspGroup:AddToggle("EspHealth", { Text = "Health bar", Default = true })
+EspHealth:OnChanged(function(Value)
+	Esp.HealthBg.Visible = Value
+end)
+
+local EspDistance = EspGroup:AddToggle("EspDistance", { Text = "Distance", Default = true })
+EspDistance:OnChanged(function(Value)
+	Esp.Distance.Visible = Value
+end)
+
+local EspTracer = EspGroup:AddToggle("EspTracer", { Text = "Tracer", Default = true })
+EspTracer:OnChanged(function(Value)
+	Esp.Tracer.Visible = Value
+
+	if Value then
+		Esp:UpdateTracer()
+	end
+end)
+
+local EspScale = EspGroup:AddSlider("EspScale", { Text = "Preview scale", Default = 40, Min = 20, Max = 70, Rounding = 0 })
+EspScale:OnChanged(function(Value)
+	local Scale = Value / 100
+	Esp.Dummy.Size = UDim2.fromScale(Scale, Scale * 1.5)
+	Esp:UpdateTracer()
+end)
+
+EspGroup:AddLabel("Colour"):AddColorPicker("EspColor", {
+	Default = Color3.fromRGB(235, 75, 75),
+	Callback = function(Value)
+		for _, Line in ipairs(Esp.Lines) do
+			Line.BackgroundColor3 = Value
+		end
+
+		Esp.Fill.BackgroundColor3 = Value
+		Esp.Tracer.BackgroundColor3 = Value
+	end,
+})
+
+-- keep the tracer lined up when the preview resizes
+Esp.Scene:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+	if Esp.Tracer.Visible then
+		Esp:UpdateTracer()
+	end
+end)
+
+task.defer(function()
+	Esp:UpdateTracer()
+end)
+
+-- =====================================================================
+-- FLOATING PANELS (Popout Windows)
+-- =====================================================================
+-- Popouts are floating, draggable, resizable panels that live on top of the
+-- game (outside the menu). They can hold the same options as a groupbox, and
+-- you can have several on screen at once and show/hide them however you like.
+local PanelsBox = FeaturesTab:AddLeftGroupbox("Floating Panels")
+
+-- Panel 1 - starts visible so you can see it immediately
+local StatsPanel = Library:CreatePopout({
+	Title = "Stats",
+	Size = UDim2.fromOffset(220, 150),
+	Position = UDim2.fromOffset(180, 150),
+	Visible = true,
+	ShowWhenMenuClosed = true,
+	Resizable = true,
+})
+
+local FpsLabel = StatsPanel:AddLabel("FPS: --")
+local UptimeLabel = StatsPanel:AddLabel("Uptime: 0s")
+
+-- Panel 2 - full of options, starts hidden
+local PlayerPanel = Library:CreatePopout({
+	Title = "Player Options",
+	Size = UDim2.fromOffset(300, 280),
+	Position = UDim2.fromOffset(520, 150),
+	ShowWhenMenuClosed = true,
+	Resizable = true,
+})
+
+PlayerPanel:AddToggle("PanelAimbot", { Text = "Aimbot" })
+PlayerPanel:AddSlider("PanelFov", { Text = "FOV", Default = 90, Min = 0, Max = 360, Rounding = 0 })
+PlayerPanel:AddDropdown("PanelTarget", { Text = "Target", Values = { "Closest", "Lowest HP" }, Default = 1 })
+PlayerPanel:AddInput("PanelName", { Text = "Name filter", Default = "" })
+PlayerPanel:AddButton({ Text = "Do something", Func = function()
+	Library:Notify("Panel button clicked")
+end })
+PlayerPanel:AddLabel("Colour"):AddColorPicker("PanelColor", { Default = Color3.fromRGB(90, 130, 220) })
+PlayerPanel:AddLabel("Keybind"):AddKeyPicker("PanelKey", { Default = "H", Text = "Panel key" })
+
+-- Toggles that show/hide each panel
+PanelsBox:AddToggle("PanelStats", { Text = "Stats panel", Default = true })
+StatsPanel:LinkToggle(Toggles.PanelStats)
+
+PanelsBox:AddToggle("PanelPlayer", { Text = "Player options panel", Default = false })
+PlayerPanel:LinkToggle(Toggles.PanelPlayer)
+
+PanelsBox:AddDivider()
+PanelsBox:AddLabel("Each panel has a gear button (top-right) with options like 'keep open when menu is closed', lock position and keybind.", true)
+
+-- Live stats for the Stats panel
+task.spawn(function()
+	local RunService = game:GetService("RunService")
+	local Start = os.clock()
+
+	while StatsPanel and not StatsPanel.Destroyed do
+		local Delta = RunService.Heartbeat:Wait()
+		FpsLabel:SetText(string.format("FPS: %d", math.floor(1 / Delta + 0.5)))
+		UptimeLabel:SetText(string.format("Uptime: %ds", math.floor(os.clock() - Start)))
+	end
+end)
+
+-- Handy extras (uncomment as needed):
+-- local P = Library:GetPopout("Player Options") -- fetch a popout by title later
+-- P:SetKeybind("K")
+-- P:Destroy()
+-- Window:SetWindowTitle("Renamed window")
+-- Window:SetBackgroundImage("rbxassetid://6031075931")
+-- Library:SetNotifySide("Right")
+-- Library:SetMascot("https://example.com/mascot.png", { Size = UDim2.fromOffset(200, 200) })
+-- Library:SetDPIScale(100)
 
 -- Addons:
 -- SaveManager (Allows you to have a configuration system)
