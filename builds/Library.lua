@@ -6805,14 +6805,24 @@ do
             return
         end
 
+        local Count = 0
+
         for _, Popout in ipairs(Library.Popouts) do
             local Saved = Library.PopoutLayout[Popout.Name]
 
             if typeof(Saved) == "table" and type(Popout.ApplyLayout) == "function" then
-                pcall(function()
+                local Ok = pcall(function()
                     Popout:ApplyLayout(Saved)
                 end)
+
+                if Ok then
+                    Count = Count + 1
+                end
             end
+        end
+
+        if Count > 0 then
+            Library:Notify(string.format("Restored %d popout layout(s).", Count), 2)
         end
     end
 
