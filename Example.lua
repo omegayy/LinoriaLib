@@ -861,7 +861,7 @@ MiscBox:AddButton({
 		Dialog:AddInput("DialogInput", { Text = "Enter something...", Default = "" })
 		Dialog:AddSlider("DialogSlider", { Text = "Dialog Slider", Default = 50, Min = 0, Max = 100, Rounding = 0 })
 		Dialog:AddDropdown("DialogDropdown", { Text = "Choose an option", Values = { "Option 1", "Option 2", "Option 3" }, Default = 1 })
-	end,
+	end
 })
 
 -- =====================================================================
