@@ -6802,7 +6802,7 @@ end
 --// Popout Windows \\--
 do
     local HttpService = game:GetService("HttpService")
-    local PopoutSaveFile = "library_popouts.json"
+    local PopoutSaveFile = "LinoriaLibSettings/popouts.json"
 
     local function TryWriteFile(Contents)
         if typeof(writefile) ~= "function" then
@@ -6810,6 +6810,12 @@ do
         end
 
         pcall(function()
+            if typeof(makefolder) == "function" and typeof(isfolder) == "function" then
+                if not isfolder("LinoriaLibSettings") then
+                    makefolder("LinoriaLibSettings")
+                end
+            end
+
             writefile(PopoutSaveFile, Contents)
         end)
     end
@@ -7594,6 +7600,7 @@ do
 
         function Popout:Save()
             Library:SavePopouts()
+            -- Library:Notify("Saved layout: " .. tostring(Popout.Name), 2)
         end
 
         function Popout:ApplyLayout(Saved)
@@ -7655,19 +7662,6 @@ do
 
         if Saved then
             Popout:ApplyLayout(Saved)
-            pcall(function()
-                Library:Notify("Restored layout for: " .. tostring(Popout.Name), 2)
-            end)
-        else
-            pcall(function()
-                local Keys = {}
-                if typeof(Library.PopoutLayout) == "table" then
-                    for K, _ in next, Library.PopoutLayout do
-                        Keys[#Keys + 1] = tostring(K)
-                    end
-                end
-                Library:Notify("No saved layout for: " .. tostring(Popout.Name) .. " (have: " .. table.concat(Keys, ", ") .. ")", 4)
-            end)
         end
 
         function Popout:SetVisible(Value)
@@ -10825,21 +10819,6 @@ end
                     ShowWhenMenuClosed = true,
                     Resizable = true,
                 })
-
-                pcall(function()
-                    local Saved = Library.PopoutLayout and Library.PopoutLayout[Panel.Name]
-                    if Saved then
-                        Library:Notify("Restored layout for: " .. tostring(Panel.Name), 2)
-                    else
-                        local Keys = {}
-                        if typeof(Library.PopoutLayout) == "table" then
-                            for K, _ in next, Library.PopoutLayout do
-                                Keys[#Keys + 1] = tostring(K)
-                            end
-                        end
-                        Library:Notify("No saved layout for: " .. tostring(Panel.Name) .. " (have: " .. table.concat(Keys, ", ") .. ")", 4)
-                    end
-                end)
 
                 local Mirrored = 0
 
