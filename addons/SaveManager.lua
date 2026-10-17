@@ -120,7 +120,7 @@ local SaveManager = {} do
 
     function SaveManager:SetLibrary(library)
         self.Library = library
-    end
+        library.SaveManager = self
 
     function SaveManager:SetLoadingOrder(enabled, order)
         self.UseLoadingOrder = enabled

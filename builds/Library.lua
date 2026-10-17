@@ -8830,7 +8830,7 @@ function Library:CreateWindow(...)
 
         local Panel = Library:CreatePopout({
             Title = "Options";
-            Size = UDim2.fromOffset(320, 400);
+            Size = UDim2.fromOffset(340, 520);
             Position = UDim2.new(0.5, 0, 0.5, 0);
             Visible = true;
             ShowWhenMenuClosed = true;
@@ -8839,8 +8839,18 @@ function Library:CreateWindow(...)
 
         Library.OptionsPanel = Panel
 
+        --// The theme + config managers live here in the settings wheel.
+        --// Make the panel behave like a tab section for SaveManager.
+        Panel.AddRightGroupbox = function(self, Name)
+            if type(Name) == "string" and Name ~= "" then
+                self:AddLabel(Name)
+            end
+            return self
+        end
+        Panel.AddLeftGroupbox = Panel.AddRightGroupbox
+
         -- Theme settings (only when the ThemeManager addon has been loaded)
-        local ThemeManager = Library.ThemeManager or getgenv().ThemeManager
+        local ThemeManager = Library.ThemeManager or getgenv().ThemeManager or getgenv().LinoriaThemeManager
         if typeof(ThemeManager) == "table" and type(ThemeManager.CreateThemeManager) == "function" then
             local ok = pcall(function()
                 ThemeManager:CreateThemeManager(Panel)
@@ -8850,6 +8860,21 @@ function Library:CreateWindow(...)
             end
         else
             Panel:AddLabel("Load the ThemeManager addon for theme settings")
+        end
+
+        Panel:AddDivider()
+
+        -- Config management (only when the SaveManager addon has been loaded)
+        local SaveManager = Library.SaveManager or getgenv().SaveManager or getgenv().LinoriaSaveManager
+        if typeof(SaveManager) == "table" and type(SaveManager.BuildConfigSection) == "function" then
+            local ok = pcall(function()
+                SaveManager:BuildConfigSection(Panel)
+            end)
+            if not ok then
+                Panel:AddLabel("Config controls failed to load")
+            end
+        else
+            Panel:AddLabel("Load the SaveManager addon for config settings")
         end
 
         Panel:AddDivider()
