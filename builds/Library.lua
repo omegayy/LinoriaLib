@@ -7706,7 +7706,7 @@ do
         BorderMode = Enum.BorderMode.Inset;
         AnchorPoint = Vector2.new(1, 0);
         Position = UDim2.new(1, -2, 0, 21);
-        Size = UDim2.new(0, 158, 0, 62);
+        Size = UDim2.new(0, 158, 0, 80);
         Visible = false;
         ZIndex = 300;
         Parent = KeybindInner;
@@ -7840,6 +7840,60 @@ do
         end,
         function() return Library.KeybindFilters.ShowEnabledOnly end
     )
+
+    --// Keybind menu transparency cycle \\--
+    do
+        local TransRow = Library:Create("TextButton", {
+            AutoButtonColor = false;
+            BackgroundColor3 = Library.MainColor;
+            BorderColor3 = Library.OutlineColor;
+            BorderMode = Enum.BorderMode.Middle;
+            Position = UDim2.fromOffset(6, 22 + (2 * 18));
+            Size = UDim2.new(1, -12, 0, 16);
+            Font = Library.Font;
+            Text = "Transparency: 0%";
+            TextColor3 = Library.FontColor;
+            TextSize = 13;
+            TextXAlignment = Enum.TextXAlignment.Left;
+            ZIndex = 302;
+            Parent = SettingsPopup;
+        })
+
+        Library:ApplyTextStroke(TransRow)
+        Library:AddToRegistry(TransRow, {
+            BackgroundColor3 = "MainColor";
+            BorderColor3 = "OutlineColor";
+            TextColor3 = "FontColor";
+        })
+
+        local Levels = { 0, 0.25, 0.5, 0.75 }
+        local LevelIdx = 1
+
+        local function UpdateTransRow()
+            TransRow.Text = string.format("Transparency: %d%%", math.floor(Levels[LevelIdx] * 100 + 0.5))
+        end
+
+        TransRow.MouseButton1Click:Connect(function()
+            LevelIdx = (LevelIdx % #Levels) + 1
+            local Value = Levels[LevelIdx]
+            Library.KeybindTransparency = Value
+
+            if Library.KeybindFrame then
+                Library.KeybindFrame.BackgroundTransparency = Value
+            end
+            if Library.KeybindInner then
+                Library.KeybindInner.BackgroundTransparency = Value
+            end
+
+            UpdateTransRow()
+
+            if type(Library.SaveKeybindFilters) == "function" then
+                Library:SaveKeybindFilters()
+            end
+        end)
+
+        UpdateTransRow()
+    end
 
     --// Settings wheel — shared helper so it matches the popout/window wheels \\--
     local SettingsButton = Library:CreateSettingsWheelButton(KeybindInner, {
