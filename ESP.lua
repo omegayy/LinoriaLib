@@ -443,141 +443,233 @@ function ESP:Destroy()
 end
 
 function ESP:Preview(Parent)
-	if not Parent then
-		Parent = Instance.new("Frame")
-		Parent.Name = "ESPPreviewContainer"
-		Parent.BackgroundTransparency = 1
-		Parent.Size = UDim2.fromScale(1, 1)
+	-- Builds a little 3D showcase (a ViewportFrame dummy) plus a fully
+	-- self-contained ESP overlay drawn with plain Frames on top of it,
+	-- so the preview also works inside menus / ViewportFrames.
+	local Container = Parent
+	if not Container then
+		Container = Instance.new("Frame")
+		Container.Name = "ESPPreviewContainer"
+		Container.BackgroundTransparency = 1
+		Container.Size = UDim2.fromScale(1, 1)
 	end
 
-	local Cam = Instance.new("Camera")
-	Cam.FieldOfView = 40
-	Cam.Parent = workspace
+	local Viewport = Instance.new("ViewportFrame")
+	Viewport.Name = "ESP_Preview"
+	Viewport.Size = UDim2.fromScale(1, 1)
+	Viewport.BackgroundColor3 = Color3.fromRGB(16, 16, 18)
+	Viewport.Ambient = Color3.fromRGB(150, 150, 150)
+	Viewport.LightColor = Color3.fromRGB(255, 255, 255)
+	Viewport.LightDirection = Vector3.new(-0.7, 0.6, -0.3)
+	Viewport.CurrentCamera = Instance.new("Camera")
+	Viewport.CurrentCamera.FieldOfView = 40
+	Viewport.Parent = Container
 
-	local Vpf = Instance.new("ViewportFrame")
-	Vpf.Name = "ESP_Preview"
-	Vpf.Size = UDim2.new(1, -4, 1, -4)
-	Vpf.Position = UDim2.new(0, 2, 0, 2)
-	Vpf.BackgroundColor3 = Color3.fromRGB(16, 16, 18)
-	Vpf.Ambient = Color3.fromRGB(150, 150, 150)
-	Vpf.LightColor = Color3.fromRGB(230, 230, 230)
-	Vpf.LightDirection = Vector3.new(-0.7, 0.6, -0.3)
-	Vpf.CurrentCamera = Cam
-	Vpf.Parent = Parent
+	local Camera = Viewport.CurrentCamera
+	Camera.Parent = Viewport
 
 	local Model = Instance.new("Model")
-	Model.Parent = Vpf
+	Model.Name = "PreviewDummy"
 
-	local function MakePart(Name, Size, Position, Color)
-		local P = Instance.new("Part")
-		P.Name = Name
-		P.Size = Size
-		P.Position = Position
-		P.Anchored = true
-		P.Color = Color
-		P.Material = Enum.Material.SmoothPlastic
-		P.Parent = Model
-		return P
+	local function MakePart(Name, Size, Offset, Color)
+		local Part = Instance.new("Part")
+		Part.Name = Name
+		Part.Size = Size
+		Part.CFrame = CFrame.new(Offset)
+		Part.Anchored = true
+		Part.Color = Color
+		Part.Material = Enum.Material.SmoothPlastic
+		Part.Parent = Model
+		return Part
 	end
 
-	local Torso = MakePart("UpperTorso", Vector3.new(2, 2, 1), Vector3.new(0, 2.5, 0), Color3.fromRGB(75, 110, 200))
-	local LowerTorso = MakePart("LowerTorso", Vector3.new(2, 0.6, 1), Vector3.new(0, 1.7, 0), Color3.fromRGB(75, 110, 200))
-	local Head = MakePart("Head", Vector3.new(1, 1, 1), Vector3.new(0, 4, 0), Color3.fromRGB(245, 215, 175))
-	local LA = MakePart("LeftArm", Vector3.new(0.8, 1.8, 0.8), Vector3.new(-1.5, 2.8, 0), Color3.fromRGB(75, 110, 200))
-	local RA = MakePart("RightArm", Vector3.new(0.8, 1.8, 0.8), Vector3.new(1.5, 2.8, 0), Color3.fromRGB(75, 110, 200))
-	local LL = MakePart("LeftLeg", Vector3.new(0.8, 1.8, 0.8), Vector3.new(-0.5, 0.7, 0), Color3.fromRGB(45, 70, 140))
-	local RL = MakePart("RightLeg", Vector3.new(0.8, 1.8, 0.8), Vector3.new(0.5, 0.7, 0), Color3.fromRGB(45, 70, 140))
+	MakePart("UpperTorso", Vector3.new(2, 2, 1), Vector3.new(0.4, 0, 0), Color3.fromRGB(75, 110, 200))
+	MakePart("LowerTorso", Vector3.new(2, 0.6, 1), Vector3.new(0.4, -0.35, 0), Color3.fromRGB(75, 110, 200))
+	MakePart("Head", Vector3.new(1, 1, 1), Vector3.new(0.4, 1.5, 0), Color3.fromRGB(245, 215, 175))
+	MakePart("LeftArm", Vector3.new(0.8, 1.8, 0.8), Vector3.new(-0.9, 0.1, 0), Color3.fromRGB(75, 110, 200))
+	MakePart("RightArm", Vector3.new(0.8, 1.8, 0.8), Vector3.new(1.7, 0.1, 0), Color3.fromRGB(75, 110, 200))
+	MakePart("LeftLeg", Vector3.new(0.8, 1.8, 0.8), Vector3.new(-0.05, -1.4, 0), Color3.fromRGB(45, 70, 140))
+	MakePart("RightLeg", Vector3.new(0.8, 1.8, 0.8), Vector3.new(0.85, -1.4, 0), Color3.fromRGB(45, 70, 140))
 
-	local Cf = Torso.CFrame:Lerp(Head.CFrame, 0.5)
-	Cam.CFrame = Cf * CFrame.new(0, 1, 6) * CFrame.Angles(0, math.rad(180), 0)
+	Model.Parent = Viewport
+	Model.PrimaryPart = Model:FindFirstChild("UpperTorso")
 
-	local root = Model:FindFirstChild("HumanoidRootPart") or Torso
-	local Human = Instance.new("Humanoid")
-	Human.Parent = Model
+	-- The ESP overlay itself. Rendered with plain Frames so it works
+	-- everywhere the ESP plugin gets Preview()ed (menus included).
+	local Overlay = Instance.new("Frame")
+	Overlay.Name = "ESP_Preview_Overlay"
+	Overlay.BackgroundTransparency = 1
+	Overlay.Size = UDim2.fromScale(1, 1)
+	Overlay.Parent = Container
 
-	local gui = Instance.new("ScreenGui")
-	gui.Name = "ESP_Preview_Overlay"
-	gui.IgnoreGuiInset = true
-	gui.Parent = Vpf
+	local Box = Instance.new("Frame")
+	Box.Name = "Box"
+	Box.BackgroundTransparency = 1
+	Box.BorderSizePixel = 0
+	Box.Visible = self.ShowBox ~= false
+	Box.ZIndex = 2
+	Box.Parent = Overlay
 
-	local Entry = ESP.new({
-		ShowName = true,
-		ShowHealth = true,
-		ShowDistance = true,
-		ShowBox = true,
-		ShowFill = true,
-		ShowTracer = true,
-		Color = Color3.fromRGB(235, 75, 75),
-		TextColor = Color3.new(1, 1, 1),
-		OutlineColor = Color3.new(0, 0, 0),
-	})
+	local BoxOutline = Instance.new("UIStroke")
+	BoxOutline.Color = self.OutlineColor
+	BoxOutline.Thickness = 2
+	BoxOutline.Parent = Box
 
-	Entry:Add(Model, { Name = "Preview" })
+	local Fill = Instance.new("Frame")
+	Fill.Name = "Fill"
+	Fill.BackgroundColor3 = self.Color
+	Fill.BackgroundTransparency = 0.85
+	Fill.Size = UDim2.fromScale(1, 1)
+	Fill.BorderSizePixel = 0
+	Fill.Visible = self.ShowFill == true
+	Fill.ZIndex = 1
+	Fill.Parent = Box
 
-	local p = game:GetService("Players").LocalPlayer
-	if p then
-		Entry.Tracer.Visible = false
+	local NameLabel = Instance.new("TextLabel")
+	NameLabel.Name = "Name"
+	NameLabel.BackgroundTransparency = 1
+	NameLabel.Font = Enum.Font.GothamBold
+	NameLabel.TextSize = 13
+	NameLabel.TextColor3 = self.TextColor
+	NameLabel.TextStrokeTransparency = 0.5
+	NameLabel.TextXAlignment = Enum.TextXAlignment.Center
+	NameLabel.AnchorPoint = Vector2.new(0.5, 1)
+	NameLabel.Size = UDim2.new(0, 200, 0, 14)
+	NameLabel.Visible = self.ShowName ~= false
+	NameLabel.ZIndex = 3
+	NameLabel.Parent = Overlay
+
+	local HealthBar = Instance.new("Frame")
+	HealthBar.Name = "HealthBar"
+	HealthBar.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	HealthBar.BackgroundTransparency = 0.4
+	HealthBar.BorderSizePixel = 0
+	HealthBar.AnchorPoint = Vector2.new(1, 0.5)
+	HealthBar.Size = UDim2.new(0, 4, 1, 0)
+	HealthBar.Visible = self.ShowHealth == true
+	HealthBar.ZIndex = 2
+	HealthBar.Parent = Overlay
+
+	local HealthFill = Instance.new("Frame")
+	HealthFill.BackgroundColor3 = Color3.fromRGB(80, 220, 100)
+	HealthFill.BorderSizePixel = 0
+	HealthFill.AnchorPoint = Vector2.new(0, 1)
+	HealthFill.Position = UDim2.fromScale(0, 1)
+	HealthFill.Size = UDim2.fromScale(1, 0.76)
+	HealthFill.ZIndex = 3
+	HealthFill.Parent = HealthBar
+
+	local DistLabel = Instance.new("TextLabel")
+	DistLabel.Name = "Distance"
+	DistLabel.BackgroundTransparency = 1
+	DistLabel.Font = Enum.Font.Gotham
+	DistLabel.TextSize = 12
+	DistLabel.TextColor3 = self.TextColor
+	DistLabel.TextStrokeTransparency = 0.5
+	DistLabel.TextXAlignment = Enum.TextXAlignment.Center
+	DistLabel.AnchorPoint = Vector2.new(0.5, 0)
+	DistLabel.Size = UDim2.new(0, 200, 0, 14)
+	DistLabel.Visible = self.ShowDistance == true
+	DistLabel.ZIndex = 3
+	DistLabel.Parent = Overlay
+
+	-- Projects a world point into ViewportFrame coordinates (perspective
+	-- divide like the game does, scaled to the viewport's AbsoluteSize).
+	local function ProjectPoint(WorldPos)
+		local Size = Viewport.AbsoluteSize
+		local ObjectSpace = Camera.CFrame:PointToObjectSpace(WorldPos)
+		if ObjectSpace.Z >= 0 then
+			return nil
+		end
+
+		local HalfHeight = -ObjectSpace.Z * math.tan(math.rad(Camera.FieldOfView) / 2)
+		local HalfWidth = HalfHeight * (Size.X / Size.Y)
+		return Vector2.new(
+			(ObjectSpace.X / HalfWidth + 1) / 2 * Size.X,
+			(1 - ObjectSpace.Y / HalfHeight) / 2 * Size.Y
+		)
 	end
 
-	Entry.Tracked._Preview = game:GetService("RunService").Heartbeat:Connect(function()
-		local Camera = Cam
-		local Char = Model
-		local Root = Torso
-		local Sz = Vector3.new(3, 4, 1)
-		local Top = Root.CFrame.Position + Vector3.new(0, Sz.Y * 0.5 + 1.5, 0)
-		local Bottom = Root.CFrame.Position - Vector3.new(0, Sz.Y * 0.5 + 1, 0)
-		local Pos = ProjectTo2D(Camera, gui, Top)
-		local Btm = ProjectTo2D(Camera, gui, Bottom)
+	local function HideEverything()
+		Box.Visible = false
+		NameLabel.Visible = false
+		HealthBar.Visible = false
+		DistLabel.Visible = false
+	end
 
-		if not Pos or not Btm then
-			if Entry.Gui then Entry.Gui.Enabled = false end
-			if Entry.Tracer then Entry.Tracer.Visible = false end
+	local Connection
+	Connection = game:GetService("RunService").Heartbeat:Connect(function()
+		local Size = Viewport.AbsoluteSize
+		if Size.X < 12 or Size.Y < 12 then
+			HideEverything()
 			return
 		end
 
-		local Height = (Btm.Y - Pos.Y)
-		local Width = Height * 0.5
+		-- The dummy slowly spins so the ESP moves around a bit too.
+		local Angle = os.clock() % 8 / 8 * (math.pi * 2)
+		Model:PivotTo(CFrame.Angles(0, Angle, 0))
 
-		if Entry.Gui then
-			Entry.Gui.Enabled = true
-			Entry.Gui.Size = UDim2.new(0, Width, 0, Height)
-			Entry.Gui.Adornee = root
-			Entry.Gui.StudsOffset = Vector3.new(0, Sz.Y * 0.5 + 3, 0)
+		local Center = Model:GetPivot().Position
+		local TopPoint = ProjectPoint(Center + Vector3.new(0, 2.35, 0))
+		local BottomPoint = ProjectPoint(Center - Vector3.new(0, 2.65, 0))
 
-			if Entry.Box then Entry.Box.Visible = self.ShowBox end
-			if Entry.BoxFill then
-				Entry.BoxFill.Visible = self.ShowFill
-				Entry.BoxFill.BackgroundColor3 = Entry.Color or self.Color
-			end
-			if Entry.NameLabel then
-				Entry.NameLabel.Visible = self.ShowName
-				Entry.NameLabel.Text = Entry.Overrides.Name or "Preview"
-			end
-			if Entry.HealthLabel then
-				Entry.HealthLabel.Visible = self.ShowHealth
-				Entry.HealthLabel.Text = "HP: 500/500"
-			end
-			if Entry.DistLabel then
-				Entry.DistLabel.Visible = self.ShowDistance
-				local DistVal = math.floor((Root.Position - Camera.CFrame.Position).Magnitude + 0.5)
-				Entry.DistLabel.Text = string.format("[%dm]", DistVal)
-			end
+		if not TopPoint or not BottomPoint then
+			HideEverything()
+			return
 		end
 
-		if Entry.Tracer then Entry.Tracer.Visible = false end
+		local Height = math.max(BottomPoint.Y - TopPoint.Y, 8)
+		local Width = Height / 2.4
+		local MidX = (TopPoint.X + BottomPoint.X) / 2
+		local MidY = (TopPoint.Y + BottomPoint.Y) / 2
+
+		Box.Visible = self.ShowBox ~= false
+		Box.Size = UDim2.fromOffset(Width, Height)
+		Box.Position = UDim2.fromOffset(MidX - Width / 2, MidY - Height / 2)
+		BoxOutline.Color = self.OutlineColor
+
+		NameLabel.Visible = self.ShowName ~= false
+		NameLabel.Text = "Preview"
+		NameLabel.Position = UDim2.fromOffset(MidX, MidY - Height / 2 - 2)
+		NameLabel.TextColor3 = self.TextColor
+
+		HealthBar.Visible = self.ShowHealth ~= false
+		HealthBar.Position = UDim2.fromOffset(MidX - Width / 2 - 7, MidY)
+		HealthBar.Size = UDim2.new(0, 4, 0, Height)
+		HealthFill.Size = UDim2.fromScale(1, 0.76)
+
+		DistLabel.Visible = self.ShowDistance ~= false
+		DistLabel.Text = "[128m]"
+		DistLabel.Position = UDim2.fromOffset(MidX, MidY + Height / 2 + 2)
+		DistLabel.TextColor3 = self.TextColor
 	end)
 
 	return {
+		Viewport = Viewport,
+		Overlay = Overlay,
 		Cleanup = function()
-			if Entry.Tracked._Preview then Entry.Tracked._Preview:Disconnect() end
-			Entry:Destroy()
-			if gui then gui:Destroy() end
-			if Model then Model:Destroy() end
-			if Cam then Cam:Destroy() end
-			if Vpf then Vpf:Destroy() end
+			if Connection then
+				Connection:Disconnect()
+			end
+			if Overlay then
+				Overlay:Destroy()
+			end
+			if Viewport then
+				Viewport:Destroy()
+			end
+			if not Parent and Container ~= Parent then
+				Container:Destroy()
+			end
 		end,
-		ESP = Entry,
-		Viewport = Vpf,
+		ESP = {
+			Box = Box;
+			BoxFill = Fill;
+			NameLabel = NameLabel;
+			HealthLabel = HealthBar;
+			DistLabel = DistLabel;
+			Tracer = nil;
+			Color = self.Color;
+		},
 	}
 end
 
