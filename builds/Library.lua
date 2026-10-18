@@ -1461,12 +1461,24 @@ do
 
             Toggled = false;
             Mode = Info.Mode or "Toggle"; -- Always, Toggle, Hold, Press
+            Text = Info.Text; --// used as the key when persisting per-keybind filters (SaveKeybindFilters)
             Type = "KeyPicker";
             Callback = Info.Callback or function(Value) end;
             ChangedCallback = Info.ChangedCallback or function(New) end;
             SyncToggleState = Info.SyncToggleState or false;
             ShowInKeybinds = if typeof(Info.ShowInKeybinds) == "boolean" then Info.ShowInKeybinds else true;
         }
+
+        --// If this keybind was hidden ([-]) in the keybind menu before, keep it
+        --// hidden. KeyPickers are created after Library:LoadKeybindFilters() ran,
+        --// so the saved HiddenKeybinds state must be applied here on creation. \\--
+        do
+            local Hidden = (Library.KeybindFilters and Library.KeybindFilters.HiddenKeybinds) or nil
+
+            if type(Hidden) == "table" and Hidden[tostring(Info.Text)] == true then
+                KeyPicker.ShowInKeybinds = false
+            end
+        end
 
         if KeyPicker.Mode == "Press" then
             assert(ParentObj.Type == "Label", "KeyPicker with the mode \"Press\" can be only applied on Labels.")
@@ -1750,9 +1762,6 @@ do
                     KeyPicker:SetShowInKeybinds(not (KeyPicker.ShowInKeybinds == false))
                     UpdateRowHideButton()
 
-            KeyPicker.KeybindHideButton = RowHideButton
-            KeyPicker.UpdateHideButton = UpdateRowHideButton
-
                     if type(Library.RefreshKeybindList) == "function" then
                         Library:RefreshKeybindList()
                     end
@@ -1803,6 +1812,7 @@ do
                 if (Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame()) or Input.UserInputType == Enum.UserInputType.Touch then
                     KeyPicker.Toggled = not KeyPicker.Toggled
                     KeyPicker:DoClick()
+                    KeyPicker:Update()
                 end
             end))
 
@@ -2019,6 +2029,17 @@ do
         end
 
         function KeyPicker:Display(Text)
+            --// While picking a key we only want the placeholder text
+            --// ("..." / "LShift + ...") on the picker button - NOT a rebuilt
+            --// mode menu. Handle that here and bail out early. \\--
+            if Text ~= nil then
+                if typeof(DisplayLabel) == "Instance" then
+                    DisplayLabel.Text = tostring(Text)
+                end
+
+                return
+            end
+
             local Modes = (KeyPicker.Data and KeyPicker.Data.Modes) or KeyPicker.Modes
             if Modes == nil or typeof(Scrolling) ~= "Instance" or not Scrolling.Parent then
                 return
@@ -2365,6 +2386,17 @@ do
 
                     break -- Input found, end loop
                 until false
+
+                --// Mouse/touch/gamepad input during picking should NOT register
+                --// as a key. Letting it through produced Value == "Unknown",
+                --// which permanently deaded the keybind (the global input
+                --// handler early-returns on "Unknown") until the user re-picked.
+                --// Treat those inputs as "cancel picking, keep the binding". \\--
+                if Input.UserInputType ~= Enum.UserInputType.Keyboard and SpecialKeysInput[Input.UserInputType] == nil then
+                    Picking = false
+                    KeyPicker:Update()
+                    return
+                end
 
                 local Key = "Unknown"
                 if SpecialKeysInput[Input.UserInputType] ~= nil then
@@ -7721,7 +7753,15 @@ do
         function Popout:LinkToggle(Toggle)
             Popout.LinkedToggle = Toggle
 
-            Toggle:OnChanged(function(Value)
+            --// Chain onto the existing OnChanged handler instead of replacing
+            --// it, so a callback registered before this isn't lost. \\--
+            local PreviousChanged = Toggle.Changed
+
+            Toggle:OnChanged(function(Value, ...)
+                if type(PreviousChanged) == "function" then
+                    pcall(PreviousChanged, Value, ...)
+                end
+
                 Popout.Visible = Value and true or false
                 Popout:UpdateVisibility()
 
@@ -8027,6 +8067,10 @@ do
     --// Keybind filters popup (opened with the little settings wheel) \\--
     local KeybindSettingsOpen = false
 
+    --// Refresh callbacks for the settings popup so we can re-render the
+    --// checkboxes/labels once the saved filter values are loaded \\--
+    local KeybindSettingsRefreshers = {}
+
     local SettingsPopup = Library:Create("Frame", {
         BackgroundColor3 = Library.BackgroundColor;
         BorderColor3 = Library.OutlineColor;
@@ -8149,6 +8193,8 @@ do
             end
         end))
 
+        table.insert(KeybindSettingsRefreshers, Refresh)
+
         Refresh()
     end
 
@@ -8220,6 +8266,31 @@ do
         end)
 
         UpdateTransRow()
+
+        --// Re-align the cycle index with the loaded transparency value so the
+        --// label shows the real state after Library:LoadKeybindFilters() \\--
+        table.insert(KeybindSettingsRefreshers, function()
+            local Value = Library.KeybindTransparency or 0
+
+            for Idx, Level in next, Levels do
+                if Level == Value then
+                    LevelIdx = Idx
+                    break
+                end
+            end
+
+            UpdateTransRow()
+        end)
+    end
+
+    --// Re-renders the keybind settings popup from the CURRENT
+    --// Library.KeybindFilters values (used after saved filters are loaded) \\--
+    function Library:RefreshKeybindSettingsUI()
+        for _, Func in next, KeybindSettingsRefreshers do
+            if type(Func) == "function" then
+                pcall(Func)
+            end
+        end
     end
 
     --// Settings wheel â€” shared helper so it matches the popout/window wheels \\--
@@ -8293,6 +8364,46 @@ do
         end
 
         Library:UpdateKeybindFrameSize()
+    end
+
+    --// Re-applies the current values of every element to its on-screen controls.
+    --// Called when the menu (re)opens so toggles/sliders/keybind rows always
+    --// show their real state (e.g. after autoload or keybind-only changes). \\--
+    function Library:ResyncMenuElements()
+        for _, Element in next, Toggles do
+            if type(Element) == "table" and type(Element.Display) == "function" then
+                pcall(function()
+                    Element:Display()
+                end)
+            end
+        end
+
+        for _, Option in next, Options do
+            if type(Option) == "table" then
+                if Option.Type == "KeyPicker" then
+                    if type(Option.Update) == "function" then
+                        pcall(function()
+                            Option:Update()
+                        end)
+                    end
+
+                elseif Option.Type == "Slider" and type(Option.Display) == "function" then
+                    pcall(function()
+                        Option:Display()
+                    end)
+
+                elseif Option.Type == "Dropdown" and type(Option.Display) == "function" then
+                    pcall(function()
+                        Option:Display()
+                    end)
+
+                elseif Option.Type == "Toggle" and type(Option.Display) == "function" then
+                    pcall(function()
+                        Option:Display()
+                    end)
+                end
+            end
+        end
     end
 
     --// Keybind filter persistence (survives rejoins) \\--
@@ -8383,6 +8494,14 @@ do
                     Library.KeybindInner.BackgroundTransparency = Library.KeybindTransparency
                 end
             end)
+
+            --// Re-render the settings popup (filter checkboxes + transparency
+            --// label) so it displays the loaded values instead of the defaults \\--
+            if type(Library.RefreshKeybindSettingsUI) == "function" then
+                pcall(function()
+                    Library:RefreshKeybindSettingsUI()
+                end)
+            end
 
             Library:RefreshKeybindList()
         end
@@ -11185,6 +11304,14 @@ end
         if Toggled then
             -- A bit scuffed, but if we're going from not toggled -> toggled we want to show the frame immediately so that the fade is visible.
             Outer.Visible = true
+
+            --// Make sure every control shows its real value when the menu
+            --// (re)opens, even if values changed while it was closed \\--
+            task.spawn(function()
+                pcall(function()
+                    Library:ResyncMenuElements()
+                end)
+            end)
 
             if DrawingLib.drawing_replaced ~= true and IsBadDrawingLib ~= true then
                 IsBadDrawingLib = not (pcall(function()
