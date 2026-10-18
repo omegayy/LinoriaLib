@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-10-18a";
+    Version = "omgayy-2026-10-18b";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
