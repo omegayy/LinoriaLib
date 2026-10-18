@@ -11858,14 +11858,43 @@ do
 
                 if typeof(Self) == "table" then
                     local Info = Args[2]
+                    local Rec = {
+                        Method = MethodName;
+                        Args = Args;
+                    }
 
                     -- NoUI keybinds are deliberately hidden everywhere
                     if not (type(Info) == "table" and Info.NoUI) then
                         Self.RecordedAddons = Self.RecordedAddons or {}
-                        table.insert(Self.RecordedAddons, {
-                            Method = MethodName;
-                            Args = Args;
-                        })
+                        table.insert(Self.RecordedAddons, Rec)
+
+                        --// If this element already has a pop-out copy, drop the
+                        --// new addon into that copy too so nothing stays hidden. \\--
+                        local Mirror = Library.MirrorMap and Library.MirrorMap[Self] or nil
+
+                        if typeof(Mirror) == "table" then
+                            local Panel = Mirror.Groupbox
+
+                            if typeof(Panel) ~= "table" or not Panel.Destroyed then
+                                task.defer(function()
+                                    if typeof(Self) ~= "table" or typeof(Mirror) ~= "table" then
+                                        return
+                                    end
+
+                                    local MirrorPanel = Mirror.Groupbox
+
+                                    if typeof(MirrorPanel) == "table" and MirrorPanel.Destroyed then
+                                        return
+                                    end
+
+                                    Library:MirrorRecordAddon(Self, Mirror, Rec)
+
+                                    if type(Library.FitPopoutToContent) == "function" and typeof(MirrorPanel) == "table" then
+                                        Library:FitPopoutToContent(MirrorPanel)
+                                    end
+                                end)
+                            end
+                        end
                     end
                 end
 
@@ -12022,6 +12051,100 @@ function Library:BindElements(A, B)
     end
 end
 
+--// Map of element (or addon) -> its pop-out copy. Keys are weak so entries
+--// drop once an original element is collected (e.g. after a script reload).
+--// Used to route newly created elements/addons into live pop-outs. \\--
+Library.MirrorMap = {}
+setmetatable(Library.MirrorMap, { __mode = "k" })
+
+--// Mirrors ONE recorded addon (keypicker / colorpicker) onto an element's
+--// pop-out copy. Used when a panel is first built and when addons are added
+--// to an element that already lives in a pop-out. \\--
+function Library:MirrorRecordAddon(Orig, Mirror, AddonRec)
+    if typeof(Orig) ~= "table" or typeof(Mirror) ~= "table" or typeof(AddonRec) ~= "table" then
+        return nil
+    end
+
+    local AddonArgs = {}
+    for i = 1, (AddonRec.Args.n or #AddonRec.Args) do
+        AddonArgs[i] = AddonRec.Args[i]
+    end
+
+    local AddonOrigIdx = AddonArgs[1]
+
+    -- hidden keybinds (NoUI) stay hidden
+    if type(AddonArgs[2]) ~= "table" or AddonArgs[2].NoUI then
+        return nil
+    end
+
+    if type(AddonOrigIdx) == "string" then
+        local TargetIdx = AddonOrigIdx .. "_popout"
+
+        --// Already mirrored (e.g. drop-in raced with a replay): don't create
+        --// a duplicate element, just make sure the sync binding exists. \\--
+        if typeof(Options[TargetIdx]) == "table" then
+            Library.MirrorMap[AddonOrigIdx and Options[AddonOrigIdx] or Orig] = Options[TargetIdx]
+
+            return Options[TargetIdx]
+        end
+    end
+
+    if type(AddonOrigIdx) == "string" then
+        AddonArgs[1] = AddonOrigIdx .. "_popout"
+    end
+
+    -- the original's callbacks fire through the sync below,
+    -- so the mirror copy itself stays silent
+    AddonArgs[2] = table.clone(AddonArgs[2])
+    AddonArgs[2].Callback = nil
+    AddonArgs[2].ChangedCallback = nil
+    AddonArgs[2].Clicked = nil
+
+    local AddonMethod = Library.__BaseAddonsFuncs and Library.__BaseAddonsFuncs[AddonRec.Method]
+    if type(AddonMethod) ~= "function" then
+        return nil
+    end
+
+    -- start the mirror at the addon's live value (and mode, for keypickers)
+    local AddonOrig = (type(AddonOrigIdx) == "string" and typeof(Options[AddonOrigIdx]) == "table" and Options[AddonOrigIdx]) or Orig
+
+    if typeof(AddonOrig) == "table" then
+        if AddonRec.Method == "AddColorPicker" then
+            AddonArgs[2].Transparency = AddonOrig.Transparency
+        else
+            if AddonOrig.Value ~= nil then
+                AddonArgs[2].Default = AddonOrig.Value
+            end
+
+            if AddonOrig.Mode ~= nil then
+                AddonArgs[2].Mode = AddonOrig.Mode
+            end
+
+            AddonArgs[2].DefaultModifiers = table.clone(AddonOrig.Modifiers or {})
+        end
+    end
+
+    local ok, Addon = pcall(function()
+        return AddonMethod(Mirror, table.unpack(AddonArgs, 1, #AddonArgs))
+    end)
+
+    if not ok or typeof(Addon) ~= "table" then
+        return nil
+    end
+
+    local AddonMirror = (type(AddonArgs[1]) == "string" and typeof(Options[AddonArgs[1]]) == "table" and Options[AddonArgs[1]]) or Addon
+
+    if typeof(AddonOrig) == "table" and typeof(AddonMirror) == "table" and AddonOrig ~= AddonMirror then
+        pcall(function()
+            Library:BindAddonElements(AddonOrig, AddonMirror)
+        end)
+    end
+
+    Library.MirrorMap[AddonOrig] = AddonMirror
+
+    return Addon
+end
+
 --// Mirror a single recorded element into a pop-out panel. Used both when the
 --// panel is first created and when new elements are added to a groupbox that
 --// already has a live pop-out, so nothing is ever left behind.
@@ -12115,66 +12238,31 @@ function Library:MirrorRecordIntoPanel(Panel, Rec)
         end
     end
 
-    if typeof(Orig) == "table" and Mirror ~= Orig then
-        pcall(function()
-            Library:BindElements(Orig, Mirror)
-        end)
+    --// Elements without a value-slot but with addons (labels carrying
+    --// keypickers / colorpickers, e.g. Press-mode keybinds) still need their
+    --// addons mirrored - fall back to the recorded return value. \\--
+    if Orig == nil and typeof(Rec.Returned) == "table" then
+        Orig = Rec.Returned
     end
 
-    --// Keypickers / colorpickers are added ON the element (Toggle:AddKeyPicker),
-    --// not on the groupbox - replay them here so they show up in the pop-out too \\--
+    if typeof(Orig) == "table" and Mirror ~= Orig then
+        Library.MirrorMap[Orig] = Mirror
+
+        if type(Orig.SetValue) == "function" and type(Mirror.SetValue) == "function" then
+            pcall(function()
+                Library:BindElements(Orig, Mirror)
+            end)
+        end
+    end
+
+    --// Keypickers / colorpickers are added ON the element (Toggle:AddKeyPicker,
+    --// Label:AddColorPicker), not on the groupbox - replay them here so they
+    --// show up in the pop-out too \\--
     if typeof(Orig) == "table" and type(Orig.RecordedAddons) == "table" then
         for _, AddonRec in next, Orig.RecordedAddons do
-            local AddonArgs = {}
-            for i = 1, (AddonRec.Args.n or #AddonRec.Args) do
-                AddonArgs[i] = AddonRec.Args[i]
-            end
-
-            local AddonOrigIdx = AddonArgs[1]
-
-            -- hidden keybinds (NoUI) stay hidden
-            if type(AddonArgs[2]) ~= "table" or AddonArgs[2].NoUI then
-                continue
-            end
-
-            if type(AddonArgs[1]) == "string" then
-                AddonArgs[1] = AddonArgs[1] .. "_popout"
-            end
-
-            -- the original's callbacks fire through the sync below,
-            -- so the mirror copy itself stays silent
-            AddonArgs[2] = table.clone(AddonArgs[2])
-            AddonArgs[2].Callback = nil
-            AddonArgs[2].ChangedCallback = nil
-            AddonArgs[2].Clicked = nil
-
-            local AddonMethod = Library.__BaseAddonsFuncs and Library.__BaseAddonsFuncs[AddonRec.Method]
-            if type(AddonMethod) ~= "function" then
-                continue
-            end
-
-            -- start the mirror at the addon's live value
-            local AddonOrig = (type(AddonOrigIdx) == "string") and Options[AddonOrigIdx] or nil
-            if typeof(AddonOrig) == "table" then
-                AddonArgs[2].Default = AddonOrig.Value
-                if AddonRec.Method == "AddColorPicker" then
-                    AddonArgs[2].Transparency = AddonOrig.Transparency
-                end
-            end
-
-            local AddonOk = pcall(function()
-                AddonMethod(Mirror, table.unpack(AddonArgs, 1, #AddonArgs))
+            pcall(function()
+                Library:MirrorRecordAddon(Orig, Mirror, AddonRec)
             end)
-
-            if AddonOk then
-                local AddonMirror = (type(AddonArgs[1]) == "string") and Options[AddonArgs[1]] or nil
-
-                if typeof(AddonOrig) == "table" and typeof(AddonMirror) == "table" and AddonOrig ~= AddonMirror then
-                    pcall(function()
-                        Library:BindAddonElements(AddonOrig, AddonMirror)
-                    end)
-                end
-            end
         end
     end
 
