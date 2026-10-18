@@ -121,6 +121,30 @@ local SaveManager = {} do
     function SaveManager:SetLibrary(library)
         self.Library = library
         library.SaveManager = self
+
+        --// Library-level settings (popout layouts, keybind filters) are stored
+        --// per script inside this config folder. The library loaded its fallback
+        --// copies too early (no folder known yet), so re-load them from the
+        --// script folder now. \\--
+        task.defer(function()
+            if type(library.LoadPopouts) == "function" then
+                pcall(function()
+                    library:LoadPopouts()
+                end)
+            end
+
+            if type(library.ApplyPopoutLayouts) == "function" then
+                pcall(function()
+                    library:ApplyPopoutLayouts()
+                end)
+            end
+
+            if type(library.LoadKeybindFilters) == "function" then
+                pcall(function()
+                    library:LoadKeybindFilters()
+                end)
+            end
+        end)
     end
 
     function SaveManager:SetLoadingOrder(enabled, order)

@@ -6831,10 +6831,63 @@ do
     end
 end
 
+--// Per-script settings folder \\--
+--// Library-level settings (popout layouts, keybind filters, transparencies)
+--// belong to the script that created them, so they are stored in the same
+--// config folder the script configured via SaveManager:SetFolder (falls back
+--// to the shared LinoriaLibSettings folder when no SaveManager is used). \\--
+do
+    function Library:GetLibrarySettingsFolder()
+        local SM = Library.SaveManager
+
+        if typeof(SM) == "table" and typeof(SM.Folder) == "string" and SM.Folder ~= "" then
+            local Folder = SM.Folder
+
+            if typeof(SM.SubFolder) == "string" and SM.SubFolder ~= "" then
+                Folder = Folder .. "/settings/" .. SM.SubFolder
+            else
+                Folder = Folder .. "/settings"
+            end
+
+            return Folder
+        end
+
+        return "LinoriaLibSettings"
+    end
+
+    --// Creates every missing part of a "/"-separated folder path \\--
+    function Library:EnsureSettingsFolder(Path)
+        if typeof(isfolder) ~= "function" or typeof(makefolder) ~= "function" then
+            return
+        end
+
+        local Traversed = ""
+
+        for _, Segment in ipairs(tostring(Path):split("/")) do
+            if Segment ~= "" then
+                local Full = Traversed .. Segment
+
+                if not isfolder(Full) then
+                    pcall(makefolder, Full)
+                end
+
+                Traversed = Full .. "/"
+            end
+        end
+    end
+end
+
 --// Popout Windows \\--
 do
     local HttpService = game:GetService("HttpService")
-    local PopoutSaveFile = "LinoriaLibSettings/popouts.json"
+
+    --// Legacy shared path (kept only for reading, so existing layouts survive
+    --// until the script saves its own per-script file) \\--
+    local LegacyPopoutSaveFile = "LinoriaLibSettings/popouts.json"
+
+    local function GetPopoutSaveFile()
+        return Library:GetLibrarySettingsFolder() .. "/popouts.json"
+    end
 
     local function TryWriteFile(Contents)
         if typeof(writefile) ~= "function" then
@@ -6842,36 +6895,41 @@ do
         end
 
         local Ok = pcall(function()
-            if typeof(makefolder) == "function" and typeof(isfolder) == "function" then
-                if not isfolder("LinoriaLibSettings") then
-                    makefolder("LinoriaLibSettings")
-                end
-            end
+            Library:EnsureSettingsFolder(Library:GetLibrarySettingsFolder())
 
-            writefile(PopoutSaveFile, Contents)
+            writefile(GetPopoutSaveFile(), Contents)
         end)
 
         return Ok
     end
 
-    local function TryReadFile()
-        if typeof(readfile) ~= "function" then
-            return nil
-        end
-
+    local function ReadFile(Path)
         if typeof(isfile) == "function" then
-            local Ok, Exists = pcall(isfile, PopoutSaveFile)
+            local Ok, Exists = pcall(isfile, Path)
+
             if Ok and not Exists then
                 return nil
             end
         end
 
-        local Success, Contents = pcall(readfile, PopoutSaveFile)
+        local Success, Contents = pcall(readfile, Path)
         if not Success or typeof(Contents) ~= "string" then
             return nil
         end
 
         return Contents
+    end
+
+    local function TryReadFile()
+        --// Prefer this script's own settings file \\--
+        local Contents = ReadFile(GetPopoutSaveFile())
+
+        if Contents then
+            return Contents
+        end
+
+        --// Fall back to the legacy shared file \\--
+        return ReadFile(LegacyPopoutSaveFile)
     end
 
     function Library:LoadPopouts()
@@ -8406,9 +8464,16 @@ do
         end
     end
 
-    --// Keybind filter persistence (survives rejoins) \\--
+    --// Keybind filter persistence (per script, survives rejoins) \\--
     local FilterHttp = game:GetService("HttpService")
-    local FilterSaveFile = "library_keybindfilters.json"
+
+    --// Legacy workspace-root file (kept only for reading, so existing filter
+    --// settings survive until the script saves its own per-script file) \\--
+    local LegacyFilterSaveFile = "library_keybindfilters.json"
+
+    local function GetFilterSaveFile()
+        return Library:GetLibrarySettingsFolder() .. "/keybindfilters.json"
+    end
 
     function Library:SaveKeybindFilters()
         if typeof(writefile) ~= "function" then
@@ -8438,7 +8503,11 @@ do
         end)
 
         if Ok and typeof(Encoded) == "string" then
-            pcall(writefile, FilterSaveFile, Encoded)
+            pcall(function()
+                Library:EnsureSettingsFolder(Library:GetLibrarySettingsFolder())
+
+                writefile(GetFilterSaveFile(), Encoded)
+            end)
         end
     end
 
@@ -8447,11 +8516,31 @@ do
             return
         end
 
-        local Ok, Contents = pcall(function()
-            return isfile(FilterSaveFile) and readfile(FilterSaveFile) or nil
-        end)
+        --// Prefer this script's own settings file, fall back to the legacy
+        --// workspace-root file \\--
+        local Contents = nil
 
-        if not Ok or typeof(Contents) ~= "string" then
+        do
+            local File = GetFilterSaveFile()
+
+            local Ok, Exists = pcall(isfile, File)
+
+            if Ok and Exists then
+                pcall(function()
+                    Contents = readfile(File)
+                end)
+            else
+                local LegacyOk, LegacyExists = pcall(isfile, LegacyFilterSaveFile)
+
+                if LegacyOk and LegacyExists then
+                    pcall(function()
+                        Contents = readfile(LegacyFilterSaveFile)
+                    end)
+                end
+            end
+        end
+
+        if typeof(Contents) ~= "string" then
             return
         end
 
