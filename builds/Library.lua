@@ -226,6 +226,11 @@ end
 
 local DPIScale = 1;
 local Library = {
+    --// Build marker - bump whenever Library.lua is updated.
+    --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
+    --// console) to verify they actually loaded this build, since some
+    --// executors cache game:HttpGet results for a whole session. \\--
+    Version = "omgayy-2026-10-18a";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -7621,11 +7626,37 @@ do
             local Levels = { 0, 0.25, 0.5, 0.75 }
             local LevelIdx = 1
 
+            --// Re-renders the row from the CURRENT Popout.Transparency (called
+            --// when the row is built, after a layout restore, and on click) \\--
+            local function UpdateTransRow()
+                local Value = Popout.Transparency or 0
+
+                --// Snap the cycle index to the closest grid level so the next
+                --// click continues the cycle from the real value \\--
+                local BestIdx, BestDist = 1, math.huge
+
+                for Idx, Level in next, Levels do
+                    local Dist = math.abs(Level - Value)
+
+                    if Dist < BestDist then
+                        BestIdx, BestDist = Idx, Dist
+                    end
+                end
+
+                LevelIdx = BestIdx
+
+                TransparencyRow.Text = string.format("Transparency (click): %d%%", math.floor(Value * 100 + 0.5))
+            end
+
+            Popout.SyncTransparencyRow = UpdateTransRow
+
+            UpdateTransRow()
+
             TransparencyRow.MouseButton1Click:Connect(function()
                 LevelIdx = (LevelIdx % #Levels) + 1
                 local Value = Levels[LevelIdx]
                 Popout:SetTransparency(Value)
-                TransparencyRow.Text = string.format("Transparency (click): %d%%", math.floor(Value * 100 + 0.5))
+                UpdateTransRow()
 
                 Popout:Save()
             end)
@@ -7757,6 +7788,13 @@ do
                         Popout:SetTransparency(Popout.Transparency)
                     end)
                 end
+
+                --// Keep the settings row label in sync with the restored value \\--
+                pcall(function()
+                    if type(Popout.SyncTransparencyRow) == "function" then
+                        Popout.SyncTransparencyRow()
+                    end
+                end)
             end
 
             if typeof(Saved.Resizable) == "boolean" then
@@ -8326,16 +8364,22 @@ do
         UpdateTransRow()
 
         --// Re-align the cycle index with the loaded transparency value so the
-        --// label shows the real state after Library:LoadKeybindFilters() \\--
+        --// label shows the real state after Library:LoadKeybindFilters().
+        --// Values from the settings-wheel slider can sit between the cycle
+        --// steps, so snap to the nearest level instead of exact matches. \\--
         table.insert(KeybindSettingsRefreshers, function()
             local Value = Library.KeybindTransparency or 0
+            local BestIdx, BestDist = 1, math.huge
 
             for Idx, Level in next, Levels do
-                if Level == Value then
-                    LevelIdx = Idx
-                    break
+                local Dist = math.abs(Level - Value)
+
+                if Dist < BestDist then
+                    BestIdx, BestDist = Idx, Dist
                 end
             end
+
+            LevelIdx = BestIdx
 
             UpdateTransRow()
         end)
@@ -12176,4 +12220,12 @@ end
 
 getgenv().Linoria = Library
 if getgenv().skip_getgenv_linoria ~= true then getgenv().Library = Library end
+
+--// Print the build marker so it's obvious which build was loaded (cached
+--// HttpGet results in some executors otherwise go unnoticed). \\--
+pcall(function()
+    print(string.format("[LinoriaLib] build %s", tostring(Library.Version)))
+    getgenv().LinoriaLibBuild = Library.Version
+end)
+
 return Library
