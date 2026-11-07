@@ -7916,7 +7916,7 @@ do
 
         -- Resizing
         local Resizing = false
-        local ResizeStartMouse, ResizeStartSize
+        local ResizeStartMouse, ResizeStartSize, ResizeStartPosition
 
         ResizeGrip.InputBegan:Connect(function(Input)
             if not Popout.Resizable then
@@ -7927,6 +7927,7 @@ do
                 Resizing = true
                 ResizeStartMouse = Vector2.new(Input.Position.X, Input.Position.Y)
                 ResizeStartSize = Vector2.new(Outer.AbsoluteSize.X, Outer.AbsoluteSize.Y)
+                ResizeStartPosition = Outer.Position
             end
         end)
 
@@ -7947,9 +7948,20 @@ do
                 )
             elseif Resizing then
                 local Delta = Vector2.new(Input.Position.X, Input.Position.Y) - ResizeStartMouse
-                Outer.Size = UDim2.fromOffset(
+                local NewSize = Vector2.new(
                     math.max(ResizeStartSize.X + Delta.X, 180 * DPIScale),
                     math.max(ResizeStartSize.Y + Delta.Y, 120 * DPIScale)
+                )
+
+                --// The window is centre-anchored, so changing the size normally grows
+                --// both edges at once. Offset the position by half the actual size
+                --// change so the opposite (top-left) corner stays put and only the
+                --// corner being dragged moves.
+                local SizeDelta = NewSize - ResizeStartSize
+                Outer.Size = UDim2.fromOffset(NewSize.X, NewSize.Y)
+                Outer.Position = UDim2.new(
+                    ResizeStartPosition.X.Scale, ResizeStartPosition.X.Offset + SizeDelta.X * 0.5,
+                    ResizeStartPosition.Y.Scale, ResizeStartPosition.Y.Offset + SizeDelta.Y * 0.5
                 )
                 Popout:Resize()
             end
