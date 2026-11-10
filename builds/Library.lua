@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-11-10x";
+    Version = "omgayy-2026-11-10y";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -3100,6 +3100,42 @@ do
     end
 
     Library._ColorAnimList = Library._ColorAnimList or {}
+    Library._ColorPickers = Library._ColorPickers or {}
+    Library.ColorAnimSync = Library.ColorAnimSync == true
+    Library.ColorAnimSyncSpeed = tonumber(Library.ColorAnimSyncSpeed) or 50
+
+    function Library:SetColorAnimSyncSpeed(Speed)
+        Library.ColorAnimSyncSpeed = math.clamp(tonumber(Speed) or 50, 0, 100)
+        if Library.ColorAnimSync ~= true then
+            return
+        end
+
+        for _, Picker in ipairs(Library._ColorPickers) do
+            Picker.AnimSpeed = Library.ColorAnimSyncSpeed
+            if type(Picker.RefreshAnimUi) == "function" then
+                Picker:RefreshAnimUi()
+            end
+        end
+    end
+
+    function Library:SetColorAnimSync(On, Speed)
+        if type(Speed) == "number" then
+            Library.ColorAnimSyncSpeed = math.clamp(Speed, 0, 100)
+        end
+
+        Library.ColorAnimSync = On and true or false
+        if Library.ColorAnimSync then
+            Library:SetColorAnimSyncSpeed(Library.ColorAnimSyncSpeed)
+            return
+        end
+
+        for _, Picker in ipairs(Library._ColorPickers) do
+            if type(Picker.RefreshAnimUi) == "function" then
+                Picker:RefreshAnimUi()
+            end
+        end
+    end
+
     if not Library._ColorAnimConnected then
         Library._ColorAnimConnected = true
         RunService.RenderStepped:Connect(function()
@@ -3168,6 +3204,8 @@ do
         ColorPicker.EditSlot = 1
         ColorPicker.Slot1 = { ColorPicker.Hue, ColorPicker.Sat, ColorPicker.Vib }
         ColorPicker.Slot2 = { 0, 0, 1 }
+        Library._ColorPickers = Library._ColorPickers or {}
+        table.insert(Library._ColorPickers, ColorPicker)
 
         function ColorPicker:RememberSlot()
             local pack = { ColorPicker.Hue, ColorPicker.Sat, ColorPicker.Vib }
@@ -3188,7 +3226,8 @@ do
         end
 
         function ColorPicker:SampleAnimation(now)
-            local speed = math.clamp(tonumber(ColorPicker.AnimSpeed) or 50, 0, 100)
+            local speed = Library.ColorAnimSync == true and (tonumber(Library.ColorAnimSyncSpeed) or 50) or (tonumber(ColorPicker.AnimSpeed) or 50)
+            speed = math.clamp(speed, 0, 100)
             local rate = 0.35 + (speed / 100) * 2.4
             local phase = (now or os.clock()) * rate
             local mode = ColorPicker.Animation or "Rainbow"
@@ -3262,6 +3301,12 @@ do
             local speed = tonumber(data.speed)
             if speed then
                 ColorPicker.AnimSpeed = math.clamp(speed, 0, 100)
+            end
+
+            if data.sync == true then
+                Library:SetColorAnimSync(true, tonumber(data.speed) or ColorPicker.AnimSpeed)
+            elseif data.sync == false then
+                Library:SetColorAnimSync(false)
             end
 
             if type(data.color2) == "string" then
@@ -3721,14 +3766,39 @@ do
         })
         Library:AddToRegistry(SpeedFill, { BackgroundColor3 = "AccentColor" })
 
-        FieldLabel("Color", 90)
+        FieldLabel("Sync speed", 86)
+
+        local SyncToggle = Library:Create("TextButton", {
+            AutoButtonColor = false;
+            BackgroundColor3 = Library.MainColor;
+            BorderColor3 = Library.OutlineColor;
+            Position = UDim2.new(1, -28, 0, 86);
+            Size = UDim2.fromOffset(28, 14);
+            Text = "";
+            ZIndex = 22;
+            Parent = SettingsPage;
+        })
+        Library:AddToRegistry(SyncToggle, { BackgroundColor3 = "MainColor"; BorderColor3 = "OutlineColor" })
+
+        local SyncFill = Library:Create("Frame", {
+            BackgroundColor3 = Library.AccentColor;
+            BorderSizePixel = 0;
+            Position = UDim2.fromOffset(2, 2);
+            Size = UDim2.new(1, -4, 1, -4);
+            Visible = false;
+            ZIndex = 23;
+            Parent = SyncToggle;
+        })
+        Library:AddToRegistry(SyncFill, { BackgroundColor3 = "AccentColor" })
+
+        FieldLabel("Color", 110)
 
         local function MakeAnimSwatch(offset)
             return Library:Create("TextButton", {
                 AutoButtonColor = false;
                 BackgroundColor3 = Color3.new(1, 1, 1);
                 BorderColor3 = Library.OutlineColor;
-                Position = UDim2.new(1, offset, 0, 88);
+                Position = UDim2.new(1, offset, 0, 108);
                 Size = UDim2.fromOffset(28, 16);
                 Text = "";
                 ZIndex = 22;
@@ -3758,8 +3828,10 @@ do
 
         function ColorPicker:RefreshAnimUi()
             AnimToggleFill.Visible = ColorPicker.Animate == true
+            SyncFill.Visible = Library.ColorAnimSync == true
             AnimModeButton.Text = ColorPicker.Animation or "Rainbow"
-            local speed = math.clamp(tonumber(ColorPicker.AnimSpeed) or 50, 0, 100)
+            local speed = Library.ColorAnimSync == true and (tonumber(Library.ColorAnimSyncSpeed) or 50) or (tonumber(ColorPicker.AnimSpeed) or 50)
+            speed = math.clamp(speed, 0, 100)
             SpeedFill.Size = UDim2.new(speed / 100, 0, 1, 0)
             SpeedValueLabel.Text = tostring(math.floor(speed + 0.5)) .. "%"
 
@@ -3781,6 +3853,11 @@ do
             ColorPicker:SetAnimate(ColorPicker.Animate ~= true)
             Library:AttemptSave()
         end)
+        SyncToggle.MouseButton1Click:Connect(function()
+            local speed = Library.ColorAnimSync == true and Library.ColorAnimSyncSpeed or ColorPicker.AnimSpeed
+            Library:SetColorAnimSync(Library.ColorAnimSync ~= true, speed)
+            Library:AttemptSave()
+        end)
         AnimModeButton.MouseButton1Click:Connect(function()
             AnimList.Visible = not AnimList.Visible
         end)
@@ -3789,7 +3866,13 @@ do
             local minX = SpeedTrack.AbsolutePosition.X
             local width = math.max(SpeedTrack.AbsoluteSize.X, 1)
             local alpha = math.clamp((mouseX - minX) / width, 0, 1)
-            ColorPicker.AnimSpeed = math.floor(alpha * 100 + 0.5)
+            local speed = math.floor(alpha * 100 + 0.5)
+            if Library.ColorAnimSync == true then
+                Library:SetColorAnimSyncSpeed(speed)
+                return
+            end
+
+            ColorPicker.AnimSpeed = speed
             SpeedFill.Size = UDim2.new(alpha, 0, 1, 0)
             SpeedValueLabel.Text = tostring(ColorPicker.AnimSpeed) .. "%"
         end

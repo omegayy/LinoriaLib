@@ -112,7 +112,8 @@ local SaveManager = {} do
                     transparency = object.Transparency,
                     animate = object.Animate == true,
                     animation = object.Animation,
-                    speed = object.AnimSpeed,
+                    speed = SaveManager.Library.ColorAnimSync == true and SaveManager.Library.ColorAnimSyncSpeed or object.AnimSpeed,
+                    sync = SaveManager.Library.ColorAnimSync == true,
                     color2 = second,
                 }
             end,
