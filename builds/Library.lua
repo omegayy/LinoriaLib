@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-11-10i";
+    Version = "omgayy-2026-11-10j";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -4407,8 +4407,23 @@ do
                     return
                 end
 
-                if Button.FavoriteButton and Library:MouseIsOverFrame(Button.FavoriteButton) then
-                    return
+                -- The star sits on the right edge of the button. A click there
+                -- only toggles the pin; it must not run Func as well.
+                if Button.FavoriteButton then
+                    local Pos = Mouse
+                    if Library.IsMobile and Input then
+                        Pos = Input.Position
+                    end
+
+                    local AbsPos, AbsSize = Button.Outer.AbsolutePosition, Button.Outer.AbsoluteSize
+                    if Pos and AbsSize.X > 0 and Pos.X >= AbsPos.X + AbsSize.X - 18 and Pos.X <= AbsPos.X + AbsSize.X + 6
+                        and Pos.Y >= AbsPos.Y - 4 and Pos.Y <= AbsPos.Y + AbsSize.Y + 4 then
+                        return
+                    end
+
+                    if Library:MouseIsOverFrame(Button.FavoriteButton, Input) then
+                        return
+                    end
                 end
 
                 if not ValidateClick(Input) then return end
@@ -4561,6 +4576,30 @@ do
         task.delay(0.1, Button.UpdateColors, Button)
         Blank = Groupbox:AddBlank(5, IsVisible)
         Groupbox:Resize()
+
+        -- Favorite copies must stay visible above the pop-out (global ZIndex)
+        -- and both the button and its spacer have to be removable later.
+        if Library._CollectMirrorFrames then
+            Button.Visible = true
+            Button.Outer.Visible = true
+            Button.Outer.ZIndex = 520
+            if Blank then
+                Blank.Visible = true
+            end
+
+            for _, Desc in next, Button.Outer:GetDescendants() do
+                if Desc:IsA("GuiObject") and Desc.ZIndex < 520 then
+                    Desc.ZIndex = 520 + Desc.ZIndex
+                end
+            end
+
+            Button._FavParts = { Button.Outer, Blank }
+            Library._MirrorFrames = Library._MirrorFrames or {}
+            table.insert(Library._MirrorFrames, Button.Outer)
+            if Blank then
+                table.insert(Library._MirrorFrames, Blank)
+            end
+        end
 
         table.insert(Groupbox.Elements, Button)
         table.insert(Buttons, Button)
@@ -9638,8 +9677,19 @@ function Library:CreateWindow(...)
 
         Apply(Root)
 
+        -- Global ZIndex draws a child behind its parent when the child's
+        -- value is lower. The content frame itself is raised, so descendants
+        -- have to sit above that, or a newly added row stays invisible until
+        -- something else refreshes the window.
+        local Floor = Root:IsA("GuiObject") and Root.ZIndex or (Base or 0)
+
         for _, Inst in next, Root:GetDescendants() do
             Apply(Inst)
+
+            if Inst:IsA("GuiObject") and Inst.ZIndex <= Floor then
+                local Original = Inst:GetAttribute("OriginalZIndex") or 1
+                Inst.ZIndex = Floor + math.max(Original, 1)
+            end
         end
     end
 
@@ -12552,6 +12602,84 @@ do
         end
     end
 
+    local function RememberNode(Rec, Node)
+        if typeof(Node) ~= "Instance" then
+            return
+        end
+
+        Rec._FavNodes = Rec._FavNodes or {}
+
+        for _, Existing in next, Rec._FavNodes do
+            if Existing == Node then
+                Node.Visible = true
+                return
+            end
+        end
+
+        table.insert(Rec._FavNodes, Node)
+        Node.Visible = true
+    end
+
+    function Library:ReleaseFavoriteNodes(Rec)
+        if typeof(Rec) ~= "table" then
+            return
+        end
+
+        local Seen = {}
+
+        local function Kill(Node)
+            if typeof(Node) ~= "Instance" or Seen[Node] then
+                return
+            end
+
+            Seen[Node] = true
+            pcall(function()
+                Node:Destroy()
+            end)
+        end
+
+        for _, Node in next, Rec._FavNodes or {} do
+            Kill(Node)
+        end
+
+        local Mirror = Rec._FavMirror
+        if typeof(Mirror) == "table" then
+            Kill(Mirror.Outer)
+            if type(Mirror._FavParts) == "table" then
+                for _, Part in next, Mirror._FavParts do
+                    Kill(Part)
+                end
+            end
+        end
+
+        Rec._FavNodes = nil
+        Rec._FavMirror = nil
+        Rec._FavMirrored = false
+    end
+
+    local function RevealFavorites(Panel)
+        if typeof(Panel) ~= "table" or Panel.Destroyed then
+            return
+        end
+
+        local Content = Panel.Container or Panel.Content
+        if typeof(Content) == "Instance" then
+            pcall(function()
+                Library:BringToFront(Content, 300)
+            end)
+        end
+
+        pcall(function()
+            if type(Panel.Resize) == "function" then
+                Panel:Resize()
+            end
+        end)
+
+        pcall(function()
+            Library:FitPopoutToContent(Panel)
+        end)
+    end
+
     function Library:MirrorFavoriteRecord(Rec)
         if typeof(Rec) ~= "table" or Rec._FavMirrored or not Rec._Favorited then
             return
@@ -12566,25 +12694,60 @@ do
         Rec._FavNodes = Rec._FavNodes or {}
 
         local Before = Snapshot(Container)
+        Library._MirrorFrames = {}
+        Library._CollectMirrorFrames = true
+
         local Ok, Mirrored = pcall(function()
             return Library:MirrorRecordIntoPanel(Panel, Rec, "_fav")
         end)
 
-        if Ok and Mirrored ~= false then
-            Rec._FavMirrored = true
-            CollectNew(Container, Before, Rec._FavNodes)
+        Library._CollectMirrorFrames = false
+        local Frames = Library._MirrorFrames or {}
+        Library._MirrorFrames = nil
 
-            for _, Node in next, Rec._FavNodes do
-                if typeof(Node) == "Instance" then
-                    Node.Visible = true
+        if not Ok then
+            Mirrored = nil
+        end
+
+        if typeof(Rec._FavMirror) == "table" then
+            Mirrored = Rec._FavMirror
+        end
+
+        CollectNew(Container, Before, Rec._FavNodes)
+
+        for _, Node in next, Rec._FavNodes do
+            if typeof(Node) == "Instance" then
+                Node.Visible = true
+            end
+        end
+
+        for _, Node in next, Frames do
+            RememberNode(Rec, Node)
+        end
+
+        if typeof(Mirrored) == "table" then
+            RememberNode(Rec, Mirrored.Outer)
+            if type(Mirrored._FavParts) == "table" then
+                for _, Part in next, Mirrored._FavParts do
+                    RememberNode(Rec, Part)
                 end
             end
-
-            Library:SyncFavoritesHint()
-            pcall(function()
-                Library:FitPopoutToContent(Panel)
-            end)
+            Rec._FavMirror = Mirrored
         end
+
+        if #Rec._FavNodes == 0 then
+            Rec._FavNodes = nil
+            return
+        end
+
+        Rec._FavMirrored = true
+        Library:SyncFavoritesHint()
+        RevealFavorites(Panel)
+
+        -- Layout's AbsoluteContentSize is often still 0 on this frame.
+        task.defer(function()
+            RevealFavorites(Panel)
+        end)
     end
 
     function Library:SetElementFavorite(Rec, On)
@@ -12613,17 +12776,18 @@ do
                     Node.Visible = true
                 end
             end
-        else
-            for _, Node in next, Rec._FavNodes or {} do
-                if typeof(Node) == "Instance" then
-                    Node.Visible = false
-                end
-            end
 
             if typeof(Library.FavoritesPanel) == "table" then
-                pcall(function()
-                    Library:FitPopoutToContent(Library.FavoritesPanel)
-                end)
+                RevealFavorites(Library.FavoritesPanel)
+            end
+        else
+            -- Destroy the copy. Hiding it left button rows on screen: the
+            -- frames were easy to miss, and a later layout pass showed them
+            -- again with nothing left that knew how to remove them.
+            Library:ReleaseFavoriteNodes(Rec)
+
+            if typeof(Library.FavoritesPanel) == "table" then
+                RevealFavorites(Library.FavoritesPanel)
             end
         end
 
@@ -12660,8 +12824,11 @@ do
                     local Args = { ... }
                     Args.n = N
 
-                    -- Skip recording the mirror elements themselves
-                    local IsMirror = type(Args[1]) == "string" and (string.sub(Args[1], -7) == "_popout" or string.sub(Args[1], -4) == "_fav")
+                    -- Skip recording the mirror elements themselves. Button
+                    -- copies pass a fresh info table instead of a suffixed id.
+                    local IsMirror = (type(Args[1]) == "string" and (string.sub(Args[1], -7) == "_popout" or string.sub(Args[1], -4) == "_fav"))
+                        or (type(Args[1]) == "table" and Args[1]._LinoriaMirror == true)
+                        or Self == Library.FavoritesPanel
 
                     if not IsMirror then
                         Self.RecordedElements = Self.RecordedElements or {}
@@ -13059,6 +13226,43 @@ function Library:MirrorRecordIntoPanel(Panel, Rec, Suffix)
         end
     end
 
+    -- AddButton's first argument is the live button table when the caller
+    -- passed `{ Text, Func }`. Reusing it rewrites the original's frames.
+    -- Hand the copy a fresh table so the source button stays put.
+    if Rec.Method == "AddButton" then
+        local Src = Args[1]
+        local Text = nil
+        local Func = nil
+
+        if type(Src) == "table" then
+            Text = Src.Text or Src.OriginalText
+            Func = Src.Func or Src.Callback
+        else
+            Text = Src
+            Func = Args[2]
+        end
+
+        local Visible = nil
+        if Library._CollectMirrorFrames then
+            Visible = true
+        elseif type(Src) == "table" and typeof(Src.Visible) == "boolean" then
+            Visible = Src.Visible
+        end
+
+        Args[1] = {
+            Text = Text;
+            Func = Func;
+            Tooltip = type(Src) == "table" and Src.Tooltip or nil;
+            DisabledTooltip = type(Src) == "table" and Src.DisabledTooltip or nil;
+            DoubleClick = type(Src) == "table" and Src.DoubleClick or nil;
+            Disabled = type(Src) == "table" and Src.Disabled or nil;
+            Visible = Visible;
+            _LinoriaMirror = true;
+        }
+        Args[2] = nil
+        Args.n = 1
+    end
+
     local MethodFn = (Panel and Panel[Rec.Method]) or (Library.__BaseGroupboxFuncs and Library.__BaseGroupboxFuncs[Rec.Method])
 
     if type(MethodFn) ~= "function" then
@@ -13066,8 +13270,12 @@ function Library:MirrorRecordIntoPanel(Panel, Rec, Suffix)
     end
 
     local ok, Mirror = pcall(function()
-        return MethodFn(Panel, table.unpack(Args, 1, #Args))
+        return MethodFn(Panel, table.unpack(Args, 1, Args.n or #Args))
     end)
+
+    if ok and typeof(Mirror) == "table" and Library._CollectMirrorFrames then
+        Rec._FavMirror = Mirror
+    end
 
     if not ok or typeof(Mirror) ~= "table" then
         return false
