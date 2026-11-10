@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-11-10n";
+    Version = "omgayy-2026-11-10o";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -276,6 +276,7 @@ local Library = {
     BackgroundImage = "";
     BackgroundImageTransparency = 0.75;
     BackgroundColorTransparency = 0;
+    WindowBackgroundTransparency = 0;
     MainColorTransparency = 0;
     AccentColorTransparency = 0;
     FontColorTransparency = 0;
@@ -1766,6 +1767,12 @@ function Library:UpdateColorsUsingRegistry()
             return
         end
 
+        -- The main window plates over a background picture are owned by the
+        -- UI background slider. Theme color transparency must not fade them.
+        if Object.Instance:GetAttribute("LinoriaBackdrop") then
+            return
+        end
+
         local Amount = Library[TransKey]
         if type(Amount) ~= "number" then
             return
@@ -1814,6 +1821,27 @@ function Library:UpdateColorsUsingRegistry()
             elseif typeof(ColorIdx) == "function" then
                 Object.Instance[Property] = ColorIdx()
             end
+        end
+    end
+end
+
+function Library:SetWindowBackgroundTransparency(Value)
+    Value = tonumber(Value) or 0
+    if Value > 1 then
+        Value = Value / 100
+    end
+
+    Value = math.clamp(Value, 0, 1)
+    Library.WindowBackgroundTransparency = Value
+
+    local Frames = Library.WindowBackdropFrames
+    if type(Frames) ~= "table" then
+        return
+    end
+
+    for _, Frame in next, Frames do
+        if typeof(Frame) == "Instance" then
+            Frame.BackgroundTransparency = Value
         end
     end
 end
@@ -11296,6 +11324,10 @@ function Library:CreateWindow(...)
     end
 
     local WallpaperFrames = { Inner, MainSectionOuter, MainSectionInner, TabContainer }
+    for _, Frame in next, WallpaperFrames do
+        Frame:SetAttribute("LinoriaBackdrop", true)
+    end
+    Library.WindowBackdropFrames = WallpaperFrames
 
     local function WallpaperShowing()
         local ImageOn = BackgroundImage.Visible and BackgroundImage.Image ~= ""
@@ -11304,36 +11336,7 @@ function Library:CreateWindow(...)
     end
 
     local function SyncWallpaper()
-        local On = WallpaperShowing()
-
-        for _, Frame in next, WallpaperFrames do
-            local Entry = nil
-            for _, Object in next, Library.Registry do
-                if Object.Instance == Frame then
-                    Entry = Object
-                    break
-                end
-            end
-
-            if On then
-                if Entry then
-                    Entry.BaseTransparency = Entry.BaseTransparency or {}
-                    if Entry.BaseTransparency._WallpaperBase == nil then
-                        local Saved = Entry.BaseTransparency.BackgroundTransparency
-                        Entry.BaseTransparency._WallpaperBase = type(Saved) == "number" and Saved or 0
-                    end
-                    Entry.BaseTransparency.BackgroundTransparency = 1
-                end
-                Frame.BackgroundTransparency = 1
-            elseif Entry and Entry.BaseTransparency and Entry.BaseTransparency._WallpaperBase ~= nil then
-                Entry.BaseTransparency.BackgroundTransparency = Entry.BaseTransparency._WallpaperBase
-                Entry.BaseTransparency._WallpaperBase = nil
-            end
-        end
-
-        if not On then
-            Library:UpdateColorsUsingRegistry()
-        end
+        Library:SetWindowBackgroundTransparency(Library.WindowBackgroundTransparency or 0)
     end
 
     Library.SyncWallpaper = SyncWallpaper
@@ -12827,7 +12830,7 @@ end
 
                 local Target = Toggled and Cache[Prop] or 1
                 if KeepClear and Prop == "BackgroundTransparency" then
-                    Target = 1
+                    Target = Toggled and (Library.WindowBackgroundTransparency or 0) or 1
                 end
 
                 if Target == nil or Target == Desc[Prop] or (Target == 1 and Cache[Prop] == 1 and Toggled) then

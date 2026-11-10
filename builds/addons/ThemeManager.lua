@@ -48,13 +48,7 @@ if typeof(clonefunction) == "function" then
 end
 
 local ThemeManager = {} do
-	local ThemeFields = { "FontColor", "MainColor", "AccentColor", "BackgroundColor", "OutlineColor", "FontColorTransparency", "MainColorTransparency", "AccentColorTransparency", "BackgroundColorTransparency", "VideoLink", "BackgroundImageTransparency", "BackgroundImage" }
-	local ColorTransparencyFields = {
-		FontColor = "FontColorTransparency",
-		MainColor = "MainColorTransparency",
-		AccentColor = "AccentColorTransparency",
-		BackgroundColor = "BackgroundColorTransparency",
-	}
+	local ThemeFields = { "FontColor", "MainColor", "AccentColor", "BackgroundColor", "OutlineColor", "VideoLink", "BackgroundImageTransparency", "BackgroundImage", "WindowBackgroundTransparency" }
 	ThemeManager.Folder = "LinoriaLibSettings"
 	-- if not isfolder(ThemeManager.Folder) then makefolder(ThemeManager.Folder) end
 
@@ -252,22 +246,20 @@ local ThemeManager = {} do
 				if self.Library.Options[idx] then
 					self.Library.Options[idx]:SetValue(Percent)
 				end
+			elseif idx == "WindowBackgroundTransparency" then
+				local Percent = TransparencyPercent(col)
+				self.Library.WindowBackgroundTransparency = Percent / 100
+
+				if self.Library.Options[idx] then
+					self.Library.Options[idx]:SetValue(Percent)
+				elseif type(self.Library.SetWindowBackgroundTransparency) == "function" then
+					self.Library:SetWindowBackgroundTransparency(Percent / 100)
+				end
 			elseif idx == "FontColor" or idx == "MainColor" or idx == "AccentColor" or idx == "BackgroundColor" or idx == "OutlineColor" then
 				self.Library[idx] = Color3.fromHex(col)
 
-				local TransField = ColorTransparencyFields[idx]
-				local Trans = 0
-				if TransField then
-					Trans = tonumber(Applied[TransField]) or 0
-					if Trans > 1 then
-						Trans = Trans / 100
-					end
-					Trans = math.clamp(Trans, 0, 1)
-					self.Library[TransField] = Trans
-				end
-
 				if self.Library.Options[idx] then
-					self.Library.Options[idx]:SetValueRGB(Color3.fromHex(col), Trans)
+					self.Library.Options[idx]:SetValueRGB(Color3.fromHex(col), 0)
 				end
 			end
 		end
@@ -304,6 +296,13 @@ local ThemeManager = {} do
 					if type(self.Library.SetBackgroundImage) == "function" then
 						self.Library:SetBackgroundImage(self.Library.BackgroundImage or "")
 					end
+				elseif field == "WindowBackgroundTransparency" then
+					local Percent = tonumber(Value) or 0
+					if type(self.Library.SetWindowBackgroundTransparency) == "function" then
+						self.Library:SetWindowBackgroundTransparency(Percent / 100)
+					else
+						self.Library.WindowBackgroundTransparency = math.clamp(Percent, 0, 100) / 100
+					end
 				else
 					self.Library[field] = Value
 				end
@@ -316,15 +315,17 @@ local ThemeManager = {} do
 			end
 		end
 
-		for ColorField, TransField in next, ColorTransparencyFields do
-			local Picker = self.Library.Options and self.Library.Options[ColorField]
-			if Picker and type(Picker.Transparency) == "number" then
-				self.Library[TransField] = math.clamp(Picker.Transparency, 0, 1)
-			end
-		end
+		self.Library.BackgroundColorTransparency = 0
+		self.Library.MainColorTransparency = 0
+		self.Library.AccentColorTransparency = 0
+		self.Library.FontColorTransparency = 0
 
 		self.Library.AccentColorDark = self.Library:GetDarkerColor(self.Library.AccentColor);
 		self.Library:UpdateColorsUsingRegistry()
+
+		if type(self.Library.SetWindowBackgroundTransparency) == "function" then
+			self.Library:SetWindowBackgroundTransparency(self.Library.WindowBackgroundTransparency or 0)
+		end
 	end
 
 	--// Get, Load, Save, Delete, Refresh \\--
@@ -374,18 +375,9 @@ local ThemeManager = {} do
 		local theme = {}
 		for _, field in next, ThemeFields do
 			local Option = self.Library.Options[field]
-			local ColorName = nil
-			for Name, TransField in next, ColorTransparencyFields do
-				if TransField == field then
-					ColorName = Name
-					break
-				end
-			end
 
-			if ColorName and self.Library.Options[ColorName] then
-				theme[field] = self.Library.Options[ColorName].Transparency or 0
-			elseif Option then
-				if field == "VideoLink" or field == "BackgroundImage" or field == "BackgroundImageTransparency" then
+			if Option then
+				if field == "VideoLink" or field == "BackgroundImage" or field == "BackgroundImageTransparency" or field == "WindowBackgroundTransparency" then
 					theme[field] = Option.Value
 				else
 					theme[field] = Option.Value:ToHex()
@@ -439,11 +431,11 @@ local ThemeManager = {} do
 
 	--// GUI \\--
 	function ThemeManager:CreateThemeManager(groupbox)
-		groupbox:AddLabel('Background color'):AddColorPicker('BackgroundColor', { Default = self.Library.BackgroundColor, Transparency = self.Library.BackgroundColorTransparency or 0 });
-		groupbox:AddLabel('Main color')	:AddColorPicker('MainColor', { Default = self.Library.MainColor, Transparency = self.Library.MainColorTransparency or 0 });
-		groupbox:AddLabel('Accent color'):AddColorPicker('AccentColor', { Default = self.Library.AccentColor, Transparency = self.Library.AccentColorTransparency or 0 });
+		groupbox:AddLabel('Background color'):AddColorPicker('BackgroundColor', { Default = self.Library.BackgroundColor });
+		groupbox:AddLabel('Main color')	:AddColorPicker('MainColor', { Default = self.Library.MainColor });
+		groupbox:AddLabel('Accent color'):AddColorPicker('AccentColor', { Default = self.Library.AccentColor });
 		groupbox:AddLabel('Outline color'):AddColorPicker('OutlineColor', { Default = self.Library.OutlineColor });
-		groupbox:AddLabel('Font color')	:AddColorPicker('FontColor', { Default = self.Library.FontColor, Transparency = self.Library.FontColorTransparency or 0 });
+		groupbox:AddLabel('Font color')	:AddColorPicker('FontColor', { Default = self.Library.FontColor });
 		groupbox:AddInput('VideoLink', { Text = '.webm Video Background (Link)', Default = self.Library.VideoLink, Finished = true });
 		groupbox:AddInput('BackgroundImage', {
 			Text = 'Background image (url, file, or asset id)';
@@ -454,6 +446,14 @@ local ThemeManager = {} do
 		groupbox:AddSlider('BackgroundImageTransparency', {
 			Text = 'Background image transparency';
 			Default = math.floor((self.Library.BackgroundImageTransparency or 0.75) * 100 + 0.5);
+			Min = 0;
+			Max = 100;
+			Rounding = 0;
+			Suffix = '%';
+		});
+		groupbox:AddSlider('WindowBackgroundTransparency', {
+			Text = 'UI background transparency';
+			Default = math.floor((self.Library.WindowBackgroundTransparency or 0) * 100 + 0.5);
 			Min = 0;
 			Max = 100;
 			Rounding = 0;
@@ -562,6 +562,7 @@ local ThemeManager = {} do
 		self.Library.Options.VideoLink:OnChanged(UpdateTheme)
 		self.Library.Options.BackgroundImage:OnChanged(UpdateTheme)
 		self.Library.Options.BackgroundImageTransparency:OnChanged(UpdateTheme)
+		self.Library.Options.WindowBackgroundTransparency:OnChanged(UpdateTheme)
 	end
 
 	function ThemeManager:CreateGroupBox(tab)

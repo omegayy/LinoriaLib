@@ -147,7 +147,7 @@ local SaveManager = {} do
         self:SetIgnoreIndexes({
             "BackgroundColor", "MainColor", "AccentColor", "OutlineColor", "FontColor", -- themes
             "ThemeManager_ThemeList", 'ThemeManager_CustomThemeList', 'ThemeManager_CustomThemeName', -- themes
-            "VideoLink", "BackgroundImage", "BackgroundImageTransparency",
+            "VideoLink", "BackgroundImage", "BackgroundImageTransparency", "WindowBackgroundTransparency",
         })
     end
 

@@ -29,54 +29,24 @@
       https://github.com/violin-suzutsuki/LinoriaLib/blob/main/Example.lua                
 --]]
 
--- Where the script files load from. raw.githubusercontent.com keeps a stale
--- copy of some files, so a broken Library.lua comes back as "attempt to call
--- a nil value" on the loadstring line. jsDelivr follows the latest commit.
---     getgenv().LINORIA_REPO = "https://cdn.jsdelivr.net/gh/omegayy/LinoriaLib@main/builds/"
-local repo = getgenv().LINORIA_REPO or "https://cdn.jsdelivr.net/gh/omegayy/LinoriaLib@main/"
+-- Library, theme, and save files come from builds/ on GitHub.
+-- jsDelivr's @main copy lags behind, so this uses raw.githubusercontent.com
+-- and a fresh query each run.
+--     getgenv().LINORIA_REPO = "https://raw.githubusercontent.com/omegayy/LinoriaLib/main/builds/"
+local repo = getgenv().LINORIA_REPO or "https://raw.githubusercontent.com/omegayy/LinoriaLib/main/builds/"
 
-local function FreshUrl(url)
-	local path = tostring(url):match("^https://raw%.githubusercontent%.com/omegayy/LinoriaLib/[^/]+/(.+)$")
-	if path then
-		path = path:gsub("%?.*$", "")
-		return "https://cdn.jsdelivr.net/gh/omegayy/LinoriaLib@main/" .. path
-	end
-	return url
-end
-
-local function LoadLinoria(url)
-	url = FreshUrl(url)
-
-	local function Fetch(target)
-		local ok, body = pcall(function()
-			return game:HttpGet(target)
-		end)
-
-		if ok and type(body) == "string" and #body >= 50 then
-			return body
-		end
-
-		return nil, body
+local function LoadLinoria(path)
+	local url = repo .. path
+	if not string.find(url, "?", 1, true) then
+		url = url .. "?v=" .. tostring(tick())
 	end
 
-	local body, err = Fetch(url)
+	local ok, body = pcall(function()
+		return game:HttpGet(url)
+	end)
 
-	-- builds/ has Library.lua, but the addons live next to it at the repo root.
-	if not body then
-		local fallback = url:gsub("/builds/addons/", "/addons/", 1)
-		if fallback ~= url then
-			local alt, altErr = Fetch(fallback)
-			if alt then
-				url = fallback
-				body = alt
-			else
-				err = altErr or err
-			end
-		end
-	end
-
-	if not body then
-		error("[LinoriaLib] Download failed: " .. url .. "\n" .. tostring(err), 0)
+	if not ok or type(body) ~= "string" or #body < 50 then
+		error("[LinoriaLib] Download failed: " .. url .. "\n" .. tostring(body), 0)
 	end
 
 	local fn, err = loadstring(body, url)
@@ -87,11 +57,11 @@ local function LoadLinoria(url)
 	return fn()
 end
 
-local Library = LoadLinoria(repo .. "Library.lua")
-local ThemeManager = LoadLinoria(repo .. "addons/ThemeManager.lua")
-local SaveManager = LoadLinoria(repo .. "addons/SaveManager.lua")
+local Library = LoadLinoria("Library.lua")
+local ThemeManager = LoadLinoria("addons/ThemeManager.lua")
+local SaveManager = LoadLinoria("addons/SaveManager.lua")
 
-print("[Linoria] Example r6 loaded")
+print("[Linoria] Example loaded build " .. tostring(Library.Version))
 
 
 local Options = Library.Options
