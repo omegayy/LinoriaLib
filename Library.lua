@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-11-10y";
+    Version = "omgayy-2026-11-10z";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -9164,9 +9164,13 @@ do
             end
 
             if typeof(Saved.Transparency) == "number" then
-                pcall(function()
-                    Popout:SetTransparency(Saved.Transparency)
-                end)
+                -- SetTransparency is defined further down. Keep the number
+                -- either way so the apply after that definition still runs.
+                Popout.Transparency = math.clamp(Saved.Transparency, 0, 1)
+
+                if type(Popout.SetTransparency) == "function" then
+                    Popout:SetTransparency(Popout.Transparency)
+                end
             end
 
             if typeof(Saved.Resizable) == "boolean" then
@@ -9467,11 +9471,40 @@ do
         end
 
 
-        --// Apply any transparency restored from the saved layout \\--
-        if typeof(Popout.Transparency) == "number" and Popout.Transparency > 0 then
-            pcall(function()
-                Popout:SetTransparency(Popout.Transparency)
+        --// Rows (favorites, popped-out controls) are parented after this
+        --// window is built. Give them the same background transparency. \\--
+        if not Popout._TransparencyBound then
+            Popout._TransparencyBound = true
+
+            Outer.DescendantAdded:Connect(function(Inst)
+                if Popout.Destroyed or typeof(Inst) ~= "Instance" or not Inst:IsA("GuiObject") then
+                    return
+                end
+
+                if Inst == SettingsOuter or Inst:IsDescendantOf(SettingsOuter) then
+                    return
+                end
+
+                local Amount = tonumber(Popout.Transparency) or 0
+                local Original = Inst:GetAttribute("OrigBgTrans")
+
+                if typeof(Original) ~= "number" then
+                    Original = Inst.BackgroundTransparency
+                    Inst:SetAttribute("OrigBgTrans", Original)
+                end
+
+                Inst.BackgroundTransparency = math.max(Original, Amount)
             end)
+        end
+
+        --// ApplyLayout runs before SetTransparency exists, so the saved
+        --// number is stored on the popout and applied here. \\--
+        if Saved and typeof(Saved.Transparency) == "number" then
+            Popout:SetTransparency(Saved.Transparency)
+
+            if type(Popout.SyncTransparencyRow) == "function" then
+                Popout.SyncTransparencyRow()
+            end
         end
 
         Popout.Outer = Outer
@@ -10187,18 +10220,22 @@ do
                 end
             end
 
-            --// Apply transparency \\--
-            Library.PopoutTransparency = Library.KeybindFilters.PopoutTransparency or 0
-            Library.WatermarkTransparency = Library.KeybindFilters.WatermarkTransparency or 0
+            --// A loaded config owns these. The filter file is only the
+            --// fallback for a session that has not loaded one yet. \\--
             Library.WatermarkVisible = Library.KeybindFilters.WatermarkVisible == true
             Library.WatermarkFormat = Library.KeybindFilters.WatermarkFormat or ""
 
-            if type(Library.SetKeybindTransparency) == "function" then
-                Library:SetKeybindTransparency(Library.KeybindFilters.KeybindTransparency or 0, true)
-            end
+            if Library._ChromeFromConfig ~= true then
+                Library.PopoutTransparency = Library.KeybindFilters.PopoutTransparency or 0
+                Library.WatermarkTransparency = Library.KeybindFilters.WatermarkTransparency or 0
 
-            if type(Library.SetWatermarkTransparency) == "function" then
-                Library:SetWatermarkTransparency(Library.WatermarkTransparency, true)
+                if type(Library.SetKeybindTransparency) == "function" then
+                    Library:SetKeybindTransparency(Library.KeybindFilters.KeybindTransparency or 0, true)
+                end
+
+                if type(Library.SetWatermarkTransparency) == "function" then
+                    Library:SetWatermarkTransparency(Library.WatermarkTransparency, true)
+                end
             end
 
             if type(Library.RefreshWatermark) == "function" then
