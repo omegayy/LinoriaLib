@@ -226,6 +226,11 @@ end
 
 local DPIScale = 1;
 local Library = {
+    --// Build marker - bump whenever Library.lua is updated.
+    --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
+    --// console) to verify they actually loaded this build, since some
+    --// executors cache game:HttpGet results for a whole session. \\--
+    Version = "omgayy-2026-11-10j";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -2037,14 +2042,6 @@ do
                 Library.RegistryMap[Label].Properties.TextColor3 = "AccentColor"
 
                 ModeSelectOuter.Visible = false
-
-                --// The list row still shows the previous mode until Update runs.
-                --// Selecting from this menu never went through SetValue.
-                --// Update is assigned after the mode buttons are built, so the
-                --// initial Select() during creation has to skip it. \\--
-                if type(KeyPicker.Update) == "function" then
-                    KeyPicker:Update()
-                end
             end
 
             function ModeButton:Deselect()
@@ -2205,7 +2202,8 @@ do
 
         function KeyPicker:Display(Text)
             --// While picking a key we only want the placeholder text
-            --// ("..." / "LShift + ...") on the picker button. \\--
+            --// ("..." / "LShift + ...") on the picker button - NOT a rebuilt
+            --// mode menu. Handle that here and bail out early. \\--
             if Text ~= nil then
                 if typeof(DisplayLabel) == "Instance" then
                     DisplayLabel.Text = tostring(Text)
@@ -2568,6 +2566,17 @@ do
 
                     break -- Input found, end loop
                 until false
+
+                --// Mouse/touch/gamepad input during picking should NOT register
+                --// as a key. Letting it through produced Value == "Unknown",
+                --// which permanently deaded the keybind (the global input
+                --// handler early-returns on "Unknown") until the user re-picked.
+                --// Treat those inputs as "cancel picking, keep the binding". \\--
+                if Input.UserInputType ~= Enum.UserInputType.Keyboard and SpecialKeysInput[Input.UserInputType] == nil then
+                    Picking = false
+                    KeyPicker:Update()
+                    return
+                end
 
                 local Key = "Unknown"
                 if SpecialKeysInput[Input.UserInputType] ~= nil then
@@ -4398,6 +4407,25 @@ do
                     return
                 end
 
+                -- The star sits on the right edge of the button. A click there
+                -- only toggles the pin; it must not run Func as well.
+                if Button.FavoriteButton then
+                    local Pos = Mouse
+                    if Library.IsMobile and Input then
+                        Pos = Input.Position
+                    end
+
+                    local AbsPos, AbsSize = Button.Outer.AbsolutePosition, Button.Outer.AbsoluteSize
+                    if Pos and AbsSize.X > 0 and Pos.X >= AbsPos.X + AbsSize.X - 18 and Pos.X <= AbsPos.X + AbsSize.X + 6
+                        and Pos.Y >= AbsPos.Y - 4 and Pos.Y <= AbsPos.Y + AbsSize.Y + 4 then
+                        return
+                    end
+
+                    if Library:MouseIsOverFrame(Button.FavoriteButton, Input) then
+                        return
+                    end
+                end
+
                 if not ValidateClick(Input) then return end
                 if Button.Locked then return end
 
@@ -4548,6 +4576,30 @@ do
         task.delay(0.1, Button.UpdateColors, Button)
         Blank = Groupbox:AddBlank(5, IsVisible)
         Groupbox:Resize()
+
+        -- Favorite copies must stay visible above the pop-out (global ZIndex)
+        -- and both the button and its spacer have to be removable later.
+        if Library._CollectMirrorFrames then
+            Button.Visible = true
+            Button.Outer.Visible = true
+            Button.Outer.ZIndex = 520
+            if Blank then
+                Blank.Visible = true
+            end
+
+            for _, Desc in next, Button.Outer:GetDescendants() do
+                if Desc:IsA("GuiObject") and Desc.ZIndex < 520 then
+                    Desc.ZIndex = 520 + Desc.ZIndex
+                end
+            end
+
+            Button._FavParts = { Button.Outer, Blank }
+            Library._MirrorFrames = Library._MirrorFrames or {}
+            table.insert(Library._MirrorFrames, Button.Outer)
+            if Blank then
+                table.insert(Library._MirrorFrames, Blank)
+            end
+        end
 
         table.insert(Groupbox.Elements, Button)
         table.insert(Buttons, Button)
@@ -4827,6 +4879,8 @@ do
                 Element = Textbox;
             })
         end
+
+        Textbox.TextLabel = InputLabel
 
         return Textbox
     end
@@ -5439,6 +5493,8 @@ do
                 Element = Slider;
             })
         end
+
+        Slider.TextLabel = SliderText
 
         return Slider
     end
@@ -6136,6 +6192,8 @@ do
                 Keywords = typeof(Info.Default) == "string" and Info.Default or "";
             })
         end
+
+        Dropdown.TextLabel = DropdownLabel
 
         return Dropdown
     end
@@ -7003,12 +7061,13 @@ do
     end
 end
 
---// Popout Windows \\--
+--// Per-script settings folder \\--
+--// Library-level settings (popout layouts, keybind filters, transparencies)
+--// belong to the script that created them, so they are stored in the same
+--// config folder the script configured via SaveManager:SetFolder (falls back
+--// to the shared LinoriaLibSettings folder when no SaveManager is used). \\--
 do
-    local HttpService = game:GetService("HttpService")
-    local LegacyPopoutSaveFile = "LinoriaLibSettings/popouts.json"
-
-    local function GetPopoutSaveFile()
+    function Library:GetLibrarySettingsFolder()
         local SM = Library.SaveManager
 
         if typeof(SM) == "table" and typeof(SM.Folder) == "string" and SM.Folder ~= "" then
@@ -7020,10 +7079,44 @@ do
                 Folder = Folder .. "/settings"
             end
 
-            return Folder .. "/popouts.json"
+            return Folder
         end
 
-        return LegacyPopoutSaveFile
+        return "LinoriaLibSettings"
+    end
+
+    --// Creates every missing part of a "/"-separated folder path \\--
+    function Library:EnsureSettingsFolder(Path)
+        if typeof(isfolder) ~= "function" or typeof(makefolder) ~= "function" then
+            return
+        end
+
+        local Traversed = ""
+
+        for _, Segment in ipairs(tostring(Path):split("/")) do
+            if Segment ~= "" then
+                local Full = Traversed .. Segment
+
+                if not isfolder(Full) then
+                    pcall(makefolder, Full)
+                end
+
+                Traversed = Full .. "/"
+            end
+        end
+    end
+end
+
+--// Popout Windows \\--
+do
+    local HttpService = game:GetService("HttpService")
+
+    --// Legacy shared path (kept only for reading, so existing layouts survive
+    --// until the script saves its own per-script file) \\--
+    local LegacyPopoutSaveFile = "LinoriaLibSettings/popouts.json"
+
+    local function GetPopoutSaveFile()
+        return Library:GetLibrarySettingsFolder() .. "/popouts.json"
     end
 
     local function TryWriteFile(Contents)
@@ -7032,48 +7125,20 @@ do
         end
 
         local Ok = pcall(function()
-            local Path = GetPopoutSaveFile()
-            local Folder = Path:match("^(.*)/[^/]+$")
+            Library:EnsureSettingsFolder(Library:GetLibrarySettingsFolder())
 
-            if Folder and typeof(makefolder) == "function" and typeof(isfolder) == "function" then
-                local Traversed = ""
-
-                for _, Segment in ipairs(Folder:split("/")) do
-                    if Segment ~= "" then
-                        Traversed = Traversed == "" and Segment or (Traversed .. "/" .. Segment)
-
-                        if not isfolder(Traversed) then
-                            makefolder(Traversed)
-                        end
-                    end
-                end
-            end
-
-            writefile(Path, Contents)
+            writefile(GetPopoutSaveFile(), Contents)
         end)
 
         return Ok
     end
 
-    local function TryReadFile()
-        if typeof(readfile) ~= "function" then
-            return nil
-        end
-
-        local Path = GetPopoutSaveFile()
-
+    local function ReadFile(Path)
         if typeof(isfile) == "function" then
             local Ok, Exists = pcall(isfile, Path)
+
             if Ok and not Exists then
-                if Path ~= LegacyPopoutSaveFile then
-                    Path = LegacyPopoutSaveFile
-                    local LegacyOk, LegacyExists = pcall(isfile, Path)
-                    if LegacyOk and not LegacyExists then
-                        return nil
-                    end
-                else
-                    return nil
-                end
+                return nil
             end
         end
 
@@ -7083,6 +7148,18 @@ do
         end
 
         return Contents
+    end
+
+    local function TryReadFile()
+        --// Prefer this script's own settings file \\--
+        local Contents = ReadFile(GetPopoutSaveFile())
+
+        if Contents then
+            return Contents
+        end
+
+        --// Fall back to the legacy shared file \\--
+        return ReadFile(LegacyPopoutSaveFile)
     end
 
     function Library:LoadPopouts()
@@ -8033,6 +8110,7 @@ do
                     end)
                 end
 
+                --// Keep the settings row label in sync with the restored value \\--
                 pcall(function()
                     if type(Popout.SyncTransparencyRow) == "function" then
                         Popout.SyncTransparencyRow()
@@ -8092,7 +8170,15 @@ do
         function Popout:LinkToggle(Toggle)
             Popout.LinkedToggle = Toggle
 
-            Toggle:OnChanged(function(Value)
+            --// Chain onto the existing OnChanged handler instead of replacing
+            --// it, so a callback registered before this isn't lost. \\--
+            local PreviousChanged = Toggle.Changed
+
+            Toggle:OnChanged(function(Value, ...)
+                if type(PreviousChanged) == "function" then
+                    pcall(PreviousChanged, Value, ...)
+                end
+
                 Popout.Visible = Value and true or false
                 Popout:UpdateVisibility()
 
@@ -8410,6 +8496,9 @@ do
 
     --// Keybind filters popup (opened with the little settings wheel) \\--
     local KeybindSettingsOpen = false
+
+    --// Refresh callbacks for the settings popup so we can re-render the
+    --// checkboxes/labels once the saved filter values are loaded \\--
     local KeybindSettingsRefreshers = {}
 
     local SettingsPopup = Library:Create("Frame", {
@@ -8636,7 +8725,8 @@ do
         UpdateTransRow()
     end
 
-    --// Re-renders the keybind settings popup from the current filter values \\--
+    --// Re-renders the keybind settings popup from the CURRENT
+    --// Library.KeybindFilters values (used after saved filters are loaded) \\--
     function Library:RefreshKeybindSettingsUI()
         for _, Func in next, KeybindSettingsRefreshers do
             if type(Func) == "function" then
@@ -8759,9 +8849,56 @@ do
         Library:UpdateKeybindFrameSize()
     end
 
-    --// Keybind filter persistence (survives rejoins) \\--
+    --// Re-applies the current values of every element to its on-screen controls.
+    --// Called when the menu (re)opens so toggles/sliders/keybind rows always
+    --// show their real state (e.g. after autoload or keybind-only changes). \\--
+    function Library:ResyncMenuElements()
+        for _, Element in next, Toggles do
+            if type(Element) == "table" and type(Element.Display) == "function" then
+                pcall(function()
+                    Element:Display()
+                end)
+            end
+        end
+
+        for _, Option in next, Options do
+            if type(Option) == "table" then
+                if Option.Type == "KeyPicker" then
+                    if type(Option.Update) == "function" then
+                        pcall(function()
+                            Option:Update()
+                        end)
+                    end
+
+                elseif Option.Type == "Slider" and type(Option.Display) == "function" then
+                    pcall(function()
+                        Option:Display()
+                    end)
+
+                elseif Option.Type == "Dropdown" and type(Option.Display) == "function" then
+                    pcall(function()
+                        Option:Display()
+                    end)
+
+                elseif Option.Type == "Toggle" and type(Option.Display) == "function" then
+                    pcall(function()
+                        Option:Display()
+                    end)
+                end
+            end
+        end
+    end
+
+    --// Keybind filter persistence (per script, survives rejoins) \\--
     local FilterHttp = game:GetService("HttpService")
-    local FilterSaveFile = "library_keybindfilters.json"
+
+    --// Legacy workspace-root file (kept only for reading, so existing filter
+    --// settings survive until the script saves its own per-script file) \\--
+    local LegacyFilterSaveFile = "library_keybindfilters.json"
+
+    local function GetFilterSaveFile()
+        return Library:GetLibrarySettingsFolder() .. "/keybindfilters.json"
+    end
 
     --// true/false if this keybind was saved, nil if this file has no opinion.
     --// Flag name wins. Display text is only used for older saves, and only
@@ -8827,23 +8964,24 @@ do
         Library.KeybindFilters.WatermarkTransparency = Library.WatermarkTransparency
 
         local FavoriteList = {}
-        for FavName, FavOn in next, Library.FavoriteNames or {} do
-            if FavOn and type(FavName) == "string" then
-                table.insert(FavoriteList, FavName)
+        for FavKey, FavOn in next, Library.FavoriteKeys or {} do
+            if FavOn and type(FavKey) == "string" then
+                table.insert(FavoriteList, FavKey)
             end
         end
         table.sort(FavoriteList)
         Library.KeybindFilters.Favorites = FavoriteList
-        if Library.ShowWatermark == true or Library.ShowWatermark == false then
-            Library.KeybindFilters.ShowWatermark = Library.ShowWatermark
-        end
 
         local Ok, Encoded = pcall(function()
             return FilterHttp:JSONEncode(Library.KeybindFilters or {})
         end)
 
         if Ok and typeof(Encoded) == "string" then
-            pcall(writefile, FilterSaveFile, Encoded)
+            pcall(function()
+                Library:EnsureSettingsFolder(Library:GetLibrarySettingsFolder())
+
+                writefile(GetFilterSaveFile(), Encoded)
+            end)
         end
     end
 
@@ -8852,11 +8990,31 @@ do
             return
         end
 
-        local Ok, Contents = pcall(function()
-            return isfile(FilterSaveFile) and readfile(FilterSaveFile) or nil
-        end)
+        --// Prefer this script's own settings file, fall back to the legacy
+        --// workspace-root file \\--
+        local Contents = nil
 
-        if not Ok or typeof(Contents) ~= "string" then
+        do
+            local File = GetFilterSaveFile()
+
+            local Ok, Exists = pcall(isfile, File)
+
+            if Ok and Exists then
+                pcall(function()
+                    Contents = readfile(File)
+                end)
+            else
+                local LegacyOk, LegacyExists = pcall(isfile, LegacyFilterSaveFile)
+
+                if LegacyOk and LegacyExists then
+                    pcall(function()
+                        Contents = readfile(LegacyFilterSaveFile)
+                    end)
+                end
+            end
+        end
+
+        if typeof(Contents) ~= "string" then
             return
         end
 
@@ -8873,22 +9031,15 @@ do
                 PopoutTransparency = (typeof(Data.PopoutTransparency) == "number" and Data.PopoutTransparency) or 0;
                 WatermarkTransparency = (typeof(Data.WatermarkTransparency) == "number" and Data.WatermarkTransparency) or 0;
                 Favorites = (typeof(Data.Favorites) == "table" and Data.Favorites) or {};
-                ShowWatermark = Data.ShowWatermark;
             }
 
-            Library.FavoriteNames = {}
+            Library.FavoriteKeys = {}
             if typeof(Data.Favorites) == "table" then
-                for _, FavName in ipairs(Data.Favorites) do
-                    if type(FavName) == "string" and FavName ~= "" then
-                        Library.FavoriteNames[FavName] = true
+                for _, FavKey in ipairs(Data.Favorites) do
+                    if type(FavKey) == "string" and string.find(FavKey, "/", 1, true) then
+                        Library.FavoriteKeys[FavKey] = true
                     end
                 end
-            end
-
-            if Data.ShowWatermark == false then
-                Library.ShowWatermark = false
-            elseif Data.ShowWatermark == true then
-                Library.ShowWatermark = true
             end
 
             --// Apply per-keybind visibility \\--
@@ -8996,24 +9147,15 @@ do
     Library:MakeDraggable(Library.Watermark)
 
     function Library:SetWatermarkVisibility(Bool)
-        Bool = Bool and true or false
         Library.Watermark.Visible = Bool
-
-        local Toggle = Toggles and Toggles.Options_ShowWatermark
-        if Toggle and Toggle.Value ~= Bool and type(Toggle.SetValue) == "function" and not Library._WmToggleSync then
-            Library._WmToggleSync = true
-            pcall(function()
-                Toggle:SetValue(Bool)
-            end)
-            Library._WmToggleSync = false
-        end
     end
 
     function Library:SetWatermark(Text)
         local X, Y = Library:GetTextBounds(Text, Library.Font, 14)
         Library.Watermark.Size = UDim2.new(0, X + 15, 0, (Y * 1.5) + 3)
+        Library:SetWatermarkVisibility(true)
+
         Library.WatermarkText.Text = Text
-        Library:SetWatermarkVisibility(Library.ShowWatermark ~= false)
     end
 
     function Library:SetWatermarkTransparency(Value, SkipSave)
@@ -9535,8 +9677,19 @@ function Library:CreateWindow(...)
 
         Apply(Root)
 
+        -- Global ZIndex draws a child behind its parent when the child's
+        -- value is lower. The content frame itself is raised, so descendants
+        -- have to sit above that, or a newly added row stays invisible until
+        -- something else refreshes the window.
+        local Floor = Root:IsA("GuiObject") and Root.ZIndex or (Base or 0)
+
         for _, Inst in next, Root:GetDescendants() do
             Apply(Inst)
+
+            if Inst:IsA("GuiObject") and Inst.ZIndex <= Floor then
+                local Original = Inst:GetAttribute("OriginalZIndex") or 1
+                Inst.ZIndex = Floor + math.max(Original, 1)
+            end
         end
     end
 
@@ -10145,51 +10298,6 @@ function Library:CreateWindow(...)
                 ExistingCursor:SetValue(CursorToggle.Value)
             end
         end
-
-        Panel:AddToggle("Options_ShowWatermark", {
-            Text = "Show Watermark";
-            Default = Library.ShowWatermark ~= false and Library.Watermark and Library.Watermark.Visible or false;
-            Callback = function(Value)
-                if Library._WmToggleSync then
-                    return
-                end
-
-                Library.ShowWatermark = Value and true or false
-
-                if Value then
-                    local Current = Library.WatermarkText and Library.WatermarkText.Text or ""
-                    if Current == "" then
-                        Library:SetWatermark("Linoria")
-                    else
-                        Library:SetWatermarkVisibility(true)
-                    end
-                else
-                    Library:SetWatermarkVisibility(false)
-                end
-
-                if type(Library.SaveKeybindFilters) == "function" then
-                    Library:SaveKeybindFilters()
-                end
-            end;
-        })
-
-        Panel:AddToggle("Options_ShowFavorites", {
-            Text = "Show Favorites";
-            Default = typeof(Library.FavoritesPanel) == "table" and Library.FavoritesPanel.Visible == true;
-            Callback = function(Value)
-                if Library._FavToggleSync then
-                    return
-                end
-
-                if Value then
-                    if type(Library.ShowFavorites) == "function" then
-                        Library:ShowFavorites()
-                    end
-                elseif typeof(Library.FavoritesPanel) == "table" and not Library.FavoritesPanel.Destroyed then
-                    Library.FavoritesPanel:SetVisible(false)
-                end
-            end;
-        })
 
         --// Keybind menu transparency \\--
         Panel:AddSlider("Options_KeybindTransparency", {
@@ -11482,7 +11590,7 @@ end
 
             -- local GroupboxLabel = 
             Library:CreateLabel({
-                Size = UDim2.new(1, -40, 0, 18);
+                Size = UDim2.new(1, 0, 0, 18);
                 Position = UDim2.new(0, 4, 0, 2);
                 TextSize = 14;
                 Text = Info.Name;
@@ -11520,91 +11628,7 @@ end
             Groupbox.Container = Container
             setmetatable(Groupbox, BaseGroupbox)
 
-            --// Star pins this section into the shared Favorites window.
-            --// P detaches it into its own floating panel.
-            local FavButton = Library:Create("TextButton", {
-                BackgroundColor3 = Library.MainColor;
-                BorderColor3 = Library.OutlineColor;
-                BorderMode = Enum.BorderMode.Inset;
-                AutoButtonColor = false;
-                Font = Enum.Font.GothamBold;
-                TextColor3 = Library.FontColor;
-                TextSize = 13;
-                Text = "";
-                Size = UDim2.new(0, 14, 0, 14);
-                Position = UDim2.new(1, -36, 0, 3);
-                ZIndex = 6;
-                Parent = BoxInner;
-            })
-
-            Library:AddToRegistry(FavButton, {
-                BackgroundColor3 = "MainColor";
-            })
-
-            local StarIcon = nil
-            local StarAsset = Library:GetCustomIcon("star")
-            if typeof(StarAsset) == "table" and type(StarAsset.Url) == "string" then
-                StarIcon = Library:Create("ImageLabel", {
-                    BackgroundTransparency = 1;
-                    Size = UDim2.fromScale(0.72, 0.72);
-                    Position = UDim2.fromScale(0.14, 0.14);
-                    Image = StarAsset.Url;
-                    ImageRectOffset = StarAsset.ImageRectOffset;
-                    ImageRectSize = StarAsset.ImageRectSize;
-                    ImageColor3 = Library.FontColor;
-                    ZIndex = 7;
-                    Parent = FavButton;
-                })
-
-                Library:AddToRegistry(StarIcon, {
-                    ImageColor3 = function()
-                        if Groupbox._Favorited then
-                            return Library.AccentColor
-                        end
-                        return Library.FontColor
-                    end;
-                })
-            else
-                FavButton.Text = "★"
-            end
-
-            local function PaintFavorite()
-                local On = Groupbox._Favorited == true
-                local Color = On and Library.AccentColor or Library.FontColor
-                FavButton.BorderColor3 = On and Library.AccentColor or Library.OutlineColor
-                if StarIcon then
-                    StarIcon.ImageColor3 = Color
-                else
-                    FavButton.TextColor3 = Color
-                end
-            end
-
-            Groupbox._PaintFavorite = PaintFavorite
-            PaintFavorite()
-
-            FavButton.MouseEnter:Connect(function()
-                FavButton.BorderColor3 = Library.AccentColor
-                if StarIcon then
-                    StarIcon.ImageColor3 = Library.AccentColor
-                else
-                    FavButton.TextColor3 = Library.AccentColor
-                end
-            end)
-
-            FavButton.MouseLeave:Connect(PaintFavorite)
-
-            FavButton.MouseButton1Click:Connect(function()
-                if Library.Unloaded then
-                    return
-                end
-
-                if type(Library.SetGroupboxFavorite) == "function" then
-                    Library:SetGroupboxFavorite(Groupbox, not Groupbox._Favorited)
-                end
-            end)
-
-            --// Little pop-out button (top right of the groupbox title) that
-            -- detaches this groupbox into a floating panel on screen \\--
+            --// P detaches this groupbox into its own floating panel.
             local PopoutButton = Library:Create("TextButton", {
                 BackgroundColor3 = Library.MainColor;
                 BorderColor3 = Library.OutlineColor;
@@ -11737,17 +11761,6 @@ end
                 -- Always create/focus popout; don't drop children silently.
                 Groupbox:Popout()
             end)
-
-            if type(Groupbox.Name) == "string" and Library.FavoriteNames and Library.FavoriteNames[Groupbox.Name] then
-                Groupbox._Favorited = true
-                PaintFavorite()
-
-                task.defer(function()
-                    if Groupbox._Favorited and type(Library.ShowFavorites) == "function" then
-                        Library:ShowFavorites()
-                    end
-                end)
-            end
 
             Groupbox:AddBlank(3)
             Groupbox:Resize()
@@ -12021,6 +12034,14 @@ end
         if Toggled then
             -- A bit scuffed, but if we're going from not toggled -> toggled we want to show the frame immediately so that the fade is visible.
             Outer.Visible = true
+
+            --// Make sure every control shows its real value when the menu
+            --// (re)opens, even if values changed while it was closed \\--
+            task.spawn(function()
+                pcall(function()
+                    Library:ResyncMenuElements()
+                end)
+            end)
 
             if DrawingLib.drawing_replaced ~= true and IsBadDrawingLib ~= true then
                 IsBadDrawingLib = not (pcall(function()
@@ -12357,7 +12378,7 @@ Library:GiveSignal(RunService.RenderStepped:Connect(function(Delta)
 end))
 
 ----
---// Favorites: one shared window that mirrors any section marked with F.
+--// Favorites: one shared window that mirrors any section marked with the star.
 do
     local function Snapshot(Container)
         local Seen = {}
@@ -12390,8 +12411,8 @@ do
         end
 
         local Any = false
-        for _, Groupbox in next, Library.GroupboxByPopoutName or {} do
-            if type(Groupbox) == "table" and Groupbox._Favorited and Groupbox._FavHeader then
+        for _, On in next, Library.FavoriteKeys or {} do
+            if On then
                 Any = true
                 break
             end
@@ -12417,7 +12438,7 @@ do
 
         Library.FavoritesHint = Library:CreateLabel({
             Size = UDim2.new(1, -8, 0, 36);
-            Text = "Click the star on a section to keep it in this window.";
+            Text = "Click the star on a toggle, slider, or button to pin it here.";
             TextSize = 14;
             TextWrapped = true;
             TextXAlignment = Enum.TextXAlignment.Left;
@@ -12459,8 +12480,208 @@ do
         return Panel
     end
 
-    function Library:MirrorFavoriteRecord(Groupbox, Rec)
-        if typeof(Groupbox) ~= "table" or typeof(Rec) ~= "table" or Rec._FavMirrored or not Groupbox._Favorited then
+    local FavMethods = {
+        AddToggle = true;
+        AddSlider = true;
+        AddDropdown = true;
+        AddInput = true;
+        AddButton = true;
+    }
+
+    function Library:FavoriteKey(Groupbox, Method, Element, Args)
+        local Id = nil
+        if Method == "AddButton" then
+            local Info = Args and Args[1]
+            if type(Info) == "table" then
+                Id = Info.Text
+            else
+                Id = Info
+            end
+        else
+            Id = Args and Args[1]
+        end
+
+        if type(Id) ~= "string" or Id == "" then
+            Id = (type(Element) == "table" and (Element.Text or Element.OriginalText)) or Method
+        end
+
+        local Section = (type(Groupbox) == "table" and Groupbox.Name) or ""
+        return tostring(Section) .. "/" .. tostring(Method) .. ":" .. tostring(Id)
+    end
+
+    function Library:AttachFavoriteStar(Groupbox, Rec, Element)
+        if typeof(Rec) ~= "table" or typeof(Element) ~= "table" or Rec._Star or not FavMethods[Rec.Method] then
+            return
+        end
+
+        if type(Groupbox) == "table" and (Groupbox.TableType == "Popout" or Groupbox == Library.FavoritesPanel) then
+            return
+        end
+
+        local Row = nil
+        if Rec.Method == "AddButton" then
+            Row = Element.Outer
+        else
+            Row = Element.TextLabel
+        end
+
+        if typeof(Row) ~= "Instance" then
+            return
+        end
+
+        Rec._FavKey = Library:FavoriteKey(Groupbox, Rec.Method, Element, Rec.Args)
+
+        local Star = Library:Create("TextButton", {
+            BackgroundTransparency = 1;
+            AutoButtonColor = false;
+            Text = "";
+            Size = UDim2.fromOffset(12, 12);
+            ZIndex = (Row.ZIndex or 5) + 3;
+            Parent = Row;
+        })
+
+        local Icon = nil
+        local Asset = Library:GetCustomIcon("star")
+        if typeof(Asset) == "table" and type(Asset.Url) == "string" then
+            Icon = Library:Create("ImageLabel", {
+                BackgroundTransparency = 1;
+                Size = UDim2.fromScale(1, 1);
+                Image = Asset.Url;
+                ImageRectOffset = Asset.ImageRectOffset;
+                ImageRectSize = Asset.ImageRectSize;
+                ImageColor3 = Library.FontColor;
+                ZIndex = Star.ZIndex + 1;
+                Parent = Star;
+            })
+        else
+            Star.Font = Enum.Font.GothamBold
+            Star.TextSize = 13
+            Star.Text = "★"
+            Star.TextColor3 = Library.FontColor
+        end
+
+        if Row:FindFirstChildOfClass("UIListLayout") then
+            Star.LayoutOrder = 1000
+        else
+            Star.AnchorPoint = Vector2.new(1, 0.5)
+            Star.Position = UDim2.new(1, -1, 0.5, 0)
+            if Rec.Method == "AddButton" and typeof(Element.Label) == "Instance" then
+                Element.Label.Size = UDim2.new(1, -16, 1, 0)
+            elseif Row:IsA("TextLabel") then
+                local Y = Row.Size.Y
+                Row.Size = UDim2.new(1, -14, Y.Scale, Y.Offset)
+            end
+        end
+
+        local function Paint()
+            local On = Rec._Favorited == true
+            local Color = On and Library.AccentColor or Library.FontColor
+            if Icon then
+                Icon.ImageColor3 = Color
+                Icon.ImageTransparency = On and 0 or 0.55
+            else
+                Star.TextColor3 = Color
+                Star.TextTransparency = On and 0 or 0.55
+            end
+        end
+
+        Rec._Star = Star
+        Rec._PaintFavorite = Paint
+        Element.FavoriteButton = Star
+        Paint()
+
+        Star.MouseButton1Click:Connect(function()
+            if Library.Unloaded then
+                return
+            end
+            Library:SetElementFavorite(Rec, not Rec._Favorited)
+        end)
+
+        if Library.FavoriteKeys and Library.FavoriteKeys[Rec._FavKey] then
+            Library:SetElementFavorite(Rec, true)
+        end
+    end
+
+    local function RememberNode(Rec, Node)
+        if typeof(Node) ~= "Instance" then
+            return
+        end
+
+        Rec._FavNodes = Rec._FavNodes or {}
+
+        for _, Existing in next, Rec._FavNodes do
+            if Existing == Node then
+                Node.Visible = true
+                return
+            end
+        end
+
+        table.insert(Rec._FavNodes, Node)
+        Node.Visible = true
+    end
+
+    function Library:ReleaseFavoriteNodes(Rec)
+        if typeof(Rec) ~= "table" then
+            return
+        end
+
+        local Seen = {}
+
+        local function Kill(Node)
+            if typeof(Node) ~= "Instance" or Seen[Node] then
+                return
+            end
+
+            Seen[Node] = true
+            pcall(function()
+                Node:Destroy()
+            end)
+        end
+
+        for _, Node in next, Rec._FavNodes or {} do
+            Kill(Node)
+        end
+
+        local Mirror = Rec._FavMirror
+        if typeof(Mirror) == "table" then
+            Kill(Mirror.Outer)
+            if type(Mirror._FavParts) == "table" then
+                for _, Part in next, Mirror._FavParts do
+                    Kill(Part)
+                end
+            end
+        end
+
+        Rec._FavNodes = nil
+        Rec._FavMirror = nil
+        Rec._FavMirrored = false
+    end
+
+    local function RevealFavorites(Panel)
+        if typeof(Panel) ~= "table" or Panel.Destroyed then
+            return
+        end
+
+        local Content = Panel.Container or Panel.Content
+        if typeof(Content) == "Instance" then
+            pcall(function()
+                Library:BringToFront(Content, 300)
+            end)
+        end
+
+        pcall(function()
+            if type(Panel.Resize) == "function" then
+                Panel:Resize()
+            end
+        end)
+
+        pcall(function()
+            Library:FitPopoutToContent(Panel)
+        end)
+    end
+
+    function Library:MirrorFavoriteRecord(Rec)
+        if typeof(Rec) ~= "table" or Rec._FavMirrored or not Rec._Favorited then
             return
         end
 
@@ -12470,85 +12691,103 @@ do
             return
         end
 
-        Groupbox._FavNodes = Groupbox._FavNodes or {}
-
-        if not Groupbox._FavHeader then
-            local BeforeHeader = Snapshot(Container)
-            local Title = (type(Groupbox.Name) == "string" and Groupbox.Name ~= "" and Groupbox.Name) or "Section"
-
-            pcall(function()
-                Panel:AddDivider()
-            end)
-            pcall(function()
-                Panel:AddLabel(Title)
-            end)
-
-            CollectNew(Container, BeforeHeader, Groupbox._FavNodes)
-            Groupbox._FavHeader = true
-        end
+        Rec._FavNodes = Rec._FavNodes or {}
 
         local Before = Snapshot(Container)
+        Library._MirrorFrames = {}
+        Library._CollectMirrorFrames = true
+
         local Ok, Mirrored = pcall(function()
             return Library:MirrorRecordIntoPanel(Panel, Rec, "_fav")
         end)
 
-        if Ok and Mirrored ~= false then
-            Rec._FavMirrored = true
-            CollectNew(Container, Before, Groupbox._FavNodes)
+        Library._CollectMirrorFrames = false
+        local Frames = Library._MirrorFrames or {}
+        Library._MirrorFrames = nil
 
-            for _, Node in next, Groupbox._FavNodes do
-                if typeof(Node) == "Instance" then
-                    Node.Visible = true
+        if not Ok then
+            Mirrored = nil
+        end
+
+        if typeof(Rec._FavMirror) == "table" then
+            Mirrored = Rec._FavMirror
+        end
+
+        CollectNew(Container, Before, Rec._FavNodes)
+
+        for _, Node in next, Rec._FavNodes do
+            if typeof(Node) == "Instance" then
+                Node.Visible = true
+            end
+        end
+
+        for _, Node in next, Frames do
+            RememberNode(Rec, Node)
+        end
+
+        if typeof(Mirrored) == "table" then
+            RememberNode(Rec, Mirrored.Outer)
+            if type(Mirrored._FavParts) == "table" then
+                for _, Part in next, Mirrored._FavParts do
+                    RememberNode(Rec, Part)
                 end
             end
-
-            Library:SyncFavoritesHint()
-            pcall(function()
-                Library:FitPopoutToContent(Panel)
-            end)
+            Rec._FavMirror = Mirrored
         end
+
+        if #Rec._FavNodes == 0 then
+            Rec._FavNodes = nil
+            return
+        end
+
+        Rec._FavMirrored = true
+        Library:SyncFavoritesHint()
+        RevealFavorites(Panel)
+
+        -- Layout's AbsoluteContentSize is often still 0 on this frame.
+        task.defer(function()
+            RevealFavorites(Panel)
+        end)
     end
 
-    function Library:SetGroupboxFavorite(Groupbox, On)
-        if typeof(Groupbox) ~= "table" then
+    function Library:SetElementFavorite(Rec, On)
+        if typeof(Rec) ~= "table" then
             return
         end
 
         On = On and true or false
-        Groupbox._Favorited = On
+        Rec._Favorited = On
 
-        if type(Groupbox._PaintFavorite) == "function" then
-            pcall(Groupbox._PaintFavorite)
+        if type(Rec._PaintFavorite) == "function" then
+            pcall(Rec._PaintFavorite)
         end
 
-        Library.FavoriteNames = Library.FavoriteNames or {}
-        if type(Groupbox.Name) == "string" and Groupbox.Name ~= "" then
-            Library.FavoriteNames[Groupbox.Name] = On or nil
+        Library.FavoriteKeys = Library.FavoriteKeys or {}
+        if type(Rec._FavKey) == "string" and Rec._FavKey ~= "" then
+            Library.FavoriteKeys[Rec._FavKey] = On or nil
         end
 
         if On then
             Library:ShowFavorites()
+            Library:MirrorFavoriteRecord(Rec)
 
-            for _, Rec in next, Groupbox.RecordedElements or {} do
-                Library:MirrorFavoriteRecord(Groupbox, Rec)
-            end
-
-            for _, Node in next, Groupbox._FavNodes or {} do
+            for _, Node in next, Rec._FavNodes or {} do
                 if typeof(Node) == "Instance" then
                     Node.Visible = true
                 end
             end
-        else
-            for _, Node in next, Groupbox._FavNodes or {} do
-                if typeof(Node) == "Instance" then
-                    Node.Visible = false
-                end
-            end
 
             if typeof(Library.FavoritesPanel) == "table" then
-                pcall(function()
-                    Library:FitPopoutToContent(Library.FavoritesPanel)
-                end)
+                RevealFavorites(Library.FavoritesPanel)
+            end
+        else
+            -- Destroy the copy. Hiding it left button rows on screen: the
+            -- frames were easy to miss, and a later layout pass showed them
+            -- again with nothing left that knew how to remove them.
+            Library:ReleaseFavoriteNodes(Rec)
+
+            if typeof(Library.FavoritesPanel) == "table" then
+                RevealFavorites(Library.FavoritesPanel)
             end
         end
 
@@ -12585,8 +12824,11 @@ do
                     local Args = { ... }
                     Args.n = N
 
-                    -- Skip recording the mirror elements themselves
-                    local IsMirror = type(Args[1]) == "string" and (string.sub(Args[1], -7) == "_popout" or string.sub(Args[1], -4) == "_fav")
+                    -- Skip recording the mirror elements themselves. Button
+                    -- copies pass a fresh info table instead of a suffixed id.
+                    local IsMirror = (type(Args[1]) == "string" and (string.sub(Args[1], -7) == "_popout" or string.sub(Args[1], -4) == "_fav"))
+                        or (type(Args[1]) == "table" and Args[1]._LinoriaMirror == true)
+                        or Self == Library.FavoritesPanel
 
                     if not IsMirror then
                         Self.RecordedElements = Self.RecordedElements or {}
@@ -12598,6 +12840,10 @@ do
 
                         table.insert(Self.RecordedElements, Rec)
 
+                        if type(Library.AttachFavoriteStar) == "function" then
+                            Library:AttachFavoriteStar(Self, Rec, Results[1])
+                        end
+
                         --// If this groupbox already has a live pop-out, drop the
                         --// new element into it too so nothing stays hidden.
                         if typeof(Self._PopoutPanel) == "table" and not Self._PopoutPanel.Destroyed then
@@ -12608,15 +12854,6 @@ do
                                     if Library:MirrorRecordIntoPanel(Panel, Rec) then
                                         Library:FitPopoutToContent(Panel)
                                     end
-                                end
-                            end)
-                        end
-
-                        if Self._Favorited and type(Library.MirrorFavoriteRecord) == "function" then
-                            local FavRec = Rec
-                            task.defer(function()
-                                if typeof(Self) == "table" and Self._Favorited then
-                                    Library:MirrorFavoriteRecord(Self, FavRec)
                                 end
                             end)
                         end
@@ -12649,14 +12886,43 @@ do
 
                 if typeof(Self) == "table" then
                     local Info = Args[2]
+                    local Rec = {
+                        Method = MethodName;
+                        Args = Args;
+                    }
 
                     -- NoUI keybinds are deliberately hidden everywhere
                     if not (type(Info) == "table" and Info.NoUI) then
                         Self.RecordedAddons = Self.RecordedAddons or {}
-                        table.insert(Self.RecordedAddons, {
-                            Method = MethodName;
-                            Args = Args;
-                        })
+                        table.insert(Self.RecordedAddons, Rec)
+
+                        --// If this element already has a pop-out copy, drop the
+                        --// new addon into that copy too so nothing stays hidden. \\--
+                        local Mirror = Library.MirrorMap and Library.MirrorMap[Self] or nil
+
+                        if typeof(Mirror) == "table" then
+                            local Panel = Mirror.Groupbox
+
+                            if typeof(Panel) ~= "table" or not Panel.Destroyed then
+                                task.defer(function()
+                                    if typeof(Self) ~= "table" or typeof(Mirror) ~= "table" then
+                                        return
+                                    end
+
+                                    local MirrorPanel = Mirror.Groupbox
+
+                                    if typeof(MirrorPanel) == "table" and MirrorPanel.Destroyed then
+                                        return
+                                    end
+
+                                    Library:MirrorRecordAddon(Self, Mirror, Rec)
+
+                                    if type(Library.FitPopoutToContent) == "function" and typeof(MirrorPanel) == "table" then
+                                        Library:FitPopoutToContent(MirrorPanel)
+                                    end
+                                end)
+                            end
+                        end
                     end
                 end
 
@@ -12813,6 +13079,104 @@ function Library:BindElements(A, B)
     end
 end
 
+--// Map of element (or addon) -> its pop-out copy. Keys are weak so entries
+--// drop once an original element is collected (e.g. after a script reload).
+--// Used to route newly created elements/addons into live pop-outs. \\--
+Library.MirrorMap = {}
+setmetatable(Library.MirrorMap, { __mode = "k" })
+
+--// Mirrors ONE recorded addon (keypicker / colorpicker) onto an element's
+--// pop-out copy. Used when a panel is first built and when addons are added
+--// to an element that already lives in a pop-out. \\--
+function Library:MirrorRecordAddon(Orig, Mirror, AddonRec, Suffix)
+    if typeof(Orig) ~= "table" or typeof(Mirror) ~= "table" or typeof(AddonRec) ~= "table" then
+        return nil
+    end
+
+    if type(Suffix) ~= "string" or Suffix == "" then
+        Suffix = "_popout"
+    end
+
+    local AddonArgs = {}
+    for i = 1, (AddonRec.Args.n or #AddonRec.Args) do
+        AddonArgs[i] = AddonRec.Args[i]
+    end
+
+    local AddonOrigIdx = AddonArgs[1]
+
+    -- hidden keybinds (NoUI) stay hidden
+    if type(AddonArgs[2]) ~= "table" or AddonArgs[2].NoUI then
+        return nil
+    end
+
+    if type(AddonOrigIdx) == "string" then
+        local TargetIdx = AddonOrigIdx .. Suffix
+
+        --// Already mirrored (e.g. drop-in raced with a replay): don't create
+        --// a duplicate element, just make sure the sync binding exists. \\--
+        if typeof(Options[TargetIdx]) == "table" then
+            Library.MirrorMap[AddonOrigIdx and Options[AddonOrigIdx] or Orig] = Options[TargetIdx]
+
+            return Options[TargetIdx]
+        end
+    end
+
+    if type(AddonOrigIdx) == "string" then
+        AddonArgs[1] = AddonOrigIdx .. Suffix
+    end
+
+    -- the original's callbacks fire through the sync below,
+    -- so the mirror copy itself stays silent
+    AddonArgs[2] = table.clone(AddonArgs[2])
+    AddonArgs[2].Callback = nil
+    AddonArgs[2].ChangedCallback = nil
+    AddonArgs[2].Clicked = nil
+
+    local AddonMethod = Library.__BaseAddonsFuncs and Library.__BaseAddonsFuncs[AddonRec.Method]
+    if type(AddonMethod) ~= "function" then
+        return nil
+    end
+
+    -- start the mirror at the addon's live value (and mode, for keypickers)
+    local AddonOrig = (type(AddonOrigIdx) == "string" and typeof(Options[AddonOrigIdx]) == "table" and Options[AddonOrigIdx]) or Orig
+
+    if typeof(AddonOrig) == "table" then
+        if AddonRec.Method == "AddColorPicker" then
+            AddonArgs[2].Transparency = AddonOrig.Transparency
+        else
+            if AddonOrig.Value ~= nil then
+                AddonArgs[2].Default = AddonOrig.Value
+            end
+
+            if AddonOrig.Mode ~= nil then
+                AddonArgs[2].Mode = AddonOrig.Mode
+            end
+
+            AddonArgs[2].DefaultModifiers = table.clone(AddonOrig.Modifiers or {})
+        end
+    end
+
+    local ok, Addon = pcall(function()
+        return AddonMethod(Mirror, table.unpack(AddonArgs, 1, #AddonArgs))
+    end)
+
+    if not ok or typeof(Addon) ~= "table" then
+        return nil
+    end
+
+    local AddonMirror = (type(AddonArgs[1]) == "string" and typeof(Options[AddonArgs[1]]) == "table" and Options[AddonArgs[1]]) or Addon
+
+    if typeof(AddonOrig) == "table" and typeof(AddonMirror) == "table" and AddonOrig ~= AddonMirror then
+        pcall(function()
+            Library:BindAddonElements(AddonOrig, AddonMirror)
+        end)
+    end
+
+    Library.MirrorMap[AddonOrig] = AddonMirror
+
+    return Addon
+end
+
 --// Mirror a single recorded element into a pop-out panel. Used both when the
 --// panel is first created and when new elements are added to a groupbox that
 --// already has a live pop-out, so nothing is ever left behind.
@@ -12862,6 +13226,43 @@ function Library:MirrorRecordIntoPanel(Panel, Rec, Suffix)
         end
     end
 
+    -- AddButton's first argument is the live button table when the caller
+    -- passed `{ Text, Func }`. Reusing it rewrites the original's frames.
+    -- Hand the copy a fresh table so the source button stays put.
+    if Rec.Method == "AddButton" then
+        local Src = Args[1]
+        local Text = nil
+        local Func = nil
+
+        if type(Src) == "table" then
+            Text = Src.Text or Src.OriginalText
+            Func = Src.Func or Src.Callback
+        else
+            Text = Src
+            Func = Args[2]
+        end
+
+        local Visible = nil
+        if Library._CollectMirrorFrames then
+            Visible = true
+        elseif type(Src) == "table" and typeof(Src.Visible) == "boolean" then
+            Visible = Src.Visible
+        end
+
+        Args[1] = {
+            Text = Text;
+            Func = Func;
+            Tooltip = type(Src) == "table" and Src.Tooltip or nil;
+            DisabledTooltip = type(Src) == "table" and Src.DisabledTooltip or nil;
+            DoubleClick = type(Src) == "table" and Src.DoubleClick or nil;
+            Disabled = type(Src) == "table" and Src.Disabled or nil;
+            Visible = Visible;
+            _LinoriaMirror = true;
+        }
+        Args[2] = nil
+        Args.n = 1
+    end
+
     local MethodFn = (Panel and Panel[Rec.Method]) or (Library.__BaseGroupboxFuncs and Library.__BaseGroupboxFuncs[Rec.Method])
 
     if type(MethodFn) ~= "function" then
@@ -12869,8 +13270,12 @@ function Library:MirrorRecordIntoPanel(Panel, Rec, Suffix)
     end
 
     local ok, Mirror = pcall(function()
-        return MethodFn(Panel, table.unpack(Args, 1, #Args))
+        return MethodFn(Panel, table.unpack(Args, 1, Args.n or #Args))
     end)
+
+    if ok and typeof(Mirror) == "table" and Library._CollectMirrorFrames then
+        Rec._FavMirror = Mirror
+    end
 
     if not ok or typeof(Mirror) ~= "table" then
         return false
@@ -12910,66 +13315,31 @@ function Library:MirrorRecordIntoPanel(Panel, Rec, Suffix)
         end
     end
 
-    if typeof(Orig) == "table" and Mirror ~= Orig then
-        pcall(function()
-            Library:BindElements(Orig, Mirror)
-        end)
+    --// Elements without a value-slot but with addons (labels carrying
+    --// keypickers / colorpickers, e.g. Press-mode keybinds) still need their
+    --// addons mirrored - fall back to the recorded return value. \\--
+    if Orig == nil and typeof(Rec.Returned) == "table" then
+        Orig = Rec.Returned
     end
 
-    --// Keypickers / colorpickers are added ON the element (Toggle:AddKeyPicker),
-    --// not on the groupbox - replay them here so they show up in the pop-out too \\--
+    if typeof(Orig) == "table" and Mirror ~= Orig then
+        Library.MirrorMap[Orig] = Mirror
+
+        if type(Orig.SetValue) == "function" and type(Mirror.SetValue) == "function" then
+            pcall(function()
+                Library:BindElements(Orig, Mirror)
+            end)
+        end
+    end
+
+    --// Keypickers / colorpickers are added ON the element (Toggle:AddKeyPicker,
+    --// Label:AddColorPicker), not on the groupbox - replay them here so they
+    --// show up in the pop-out too \\--
     if typeof(Orig) == "table" and type(Orig.RecordedAddons) == "table" then
         for _, AddonRec in next, Orig.RecordedAddons do
-            local AddonArgs = {}
-            for i = 1, (AddonRec.Args.n or #AddonRec.Args) do
-                AddonArgs[i] = AddonRec.Args[i]
-            end
-
-            local AddonOrigIdx = AddonArgs[1]
-
-            -- hidden keybinds (NoUI) stay hidden
-            if type(AddonArgs[2]) ~= "table" or AddonArgs[2].NoUI then
-                continue
-            end
-
-            if type(AddonArgs[1]) == "string" then
-                AddonArgs[1] = AddonArgs[1] .. Suffix
-            end
-
-            -- the original's callbacks fire through the sync below,
-            -- so the mirror copy itself stays silent
-            AddonArgs[2] = table.clone(AddonArgs[2])
-            AddonArgs[2].Callback = nil
-            AddonArgs[2].ChangedCallback = nil
-            AddonArgs[2].Clicked = nil
-
-            local AddonMethod = Library.__BaseAddonsFuncs and Library.__BaseAddonsFuncs[AddonRec.Method]
-            if type(AddonMethod) ~= "function" then
-                continue
-            end
-
-            -- start the mirror at the addon's live value
-            local AddonOrig = (type(AddonOrigIdx) == "string") and Options[AddonOrigIdx] or nil
-            if typeof(AddonOrig) == "table" then
-                AddonArgs[2].Default = AddonOrig.Value
-                if AddonRec.Method == "AddColorPicker" then
-                    AddonArgs[2].Transparency = AddonOrig.Transparency
-                end
-            end
-
-            local AddonOk = pcall(function()
-                AddonMethod(Mirror, table.unpack(AddonArgs, 1, #AddonArgs))
+            pcall(function()
+                Library:MirrorRecordAddon(Orig, Mirror, AddonRec, Suffix)
             end)
-
-            if AddonOk then
-                local AddonMirror = (type(AddonArgs[1]) == "string") and Options[AddonArgs[1]] or nil
-
-                if typeof(AddonOrig) == "table" and typeof(AddonMirror) == "table" and AddonOrig ~= AddonMirror then
-                    pcall(function()
-                        Library:BindAddonElements(AddonOrig, AddonMirror)
-                    end)
-                end
-            end
         end
     end
 
@@ -13016,4 +13386,12 @@ end
 
 getgenv().Linoria = Library
 if getgenv().skip_getgenv_linoria ~= true then getgenv().Library = Library end
+
+--// Print the build marker so it's obvious which build was loaded (cached
+--// HttpGet results in some executors otherwise go unnoticed). \\--
+pcall(function()
+    print(string.format("[LinoriaLib] build %s", tostring(Library.Version)))
+    getgenv().LinoriaLibBuild = Library.Version
+end)
+
 return Library
