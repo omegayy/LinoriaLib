@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-11-10s";
+    Version = "omgayy-2026-11-10t";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -1988,6 +1988,13 @@ do
             end
         end
 
+        -- A favorites or popout copy has its own listener. Letting it see the
+        -- same key flips the toggle again, so one press turns it on and off.
+        if type(Idx) == "string" and (string.sub(Idx, -4) == "_fav" or string.sub(Idx, -7) == "_popout") then
+            KeyPicker._LinoriaMirror = true
+            KeyPicker.ShowInKeybinds = false
+        end
+
         if KeyPicker.Mode == "Press" then
             assert(ParentObj.Type == "Label", "KeyPicker with the mode \"Press\" can be only applied on Labels.")
             
@@ -3010,7 +3017,7 @@ do
 
             if KeyPicker.Value == "Unknown" then return end
         
-            if (not Picking) and (not InputService:GetFocusedTextBox()) then
+            if (not Picking) and (not InputService:GetFocusedTextBox()) and not KeyPicker._LinoriaMirror then
                 local Key = KeyPicker.Value
                 local HoldingModifiers = AreModifiersHeld(KeyPicker.Modifiers)
                 local HoldingKey = false
@@ -3059,7 +3066,7 @@ do
                 return
             end
 
-            if (not Picking) then
+            if (not Picking) and not KeyPicker._LinoriaMirror then
                 KeyPicker:Update()
             end
         end))
