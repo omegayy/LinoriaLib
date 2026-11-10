@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-11-10t";
+    Version = "omgayy-2026-11-10u";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -2169,7 +2169,7 @@ do
                 Size = UDim2.new(1, 0, 0, 18);
                 Visible = false;
                 ZIndex = 110;
-                Parent = Library.KeybindContainer;
+                Parent = KeyPicker._LinoriaMirror and nil or Library.KeybindContainer;
             })
 
             local KeybindsToggleOuter = Library:Create("Frame", {
@@ -2696,7 +2696,7 @@ do
 
         --// Should this keybind be shown in the keybind menu? (respects the filter settings)
         function KeyPicker:ShouldShowInKeybinds()
-            if KeyPicker.ShowInKeybinds == false then
+            if KeyPicker._LinoriaMirror or KeyPicker.ShowInKeybinds == false then
                 return false
             end
 
@@ -9503,7 +9503,7 @@ do
         local Hidden = {}
 
         for Index, Option in next, Options do
-            if type(Option) == "table" and Option.Type == "KeyPicker" and Index ~= nil then
+            if type(Option) == "table" and Option.Type == "KeyPicker" and Index ~= nil and not Option._LinoriaMirror then
                 Hidden[tostring(Index)] = Option.ShowInKeybinds == false
             end
         end
@@ -9621,7 +9621,7 @@ do
 
             --// Apply per-keybind visibility \\--
             for Index, Option in next, Options do
-                if type(Option) == "table" and Option.Type == "KeyPicker" then
+                if type(Option) == "table" and Option.Type == "KeyPicker" and not Option._LinoriaMirror then
                     local SavedHidden = Library:GetSavedKeybindHidden(Index, Option.Text)
 
                     if SavedHidden ~= nil then
