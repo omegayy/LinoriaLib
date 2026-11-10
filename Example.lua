@@ -29,18 +29,45 @@
       https://github.com/violin-suzutsuki/LinoriaLib/blob/main/Example.lua                
 --]]
 
--- Where the script files load from. GitHub's CDN sometimes ignores "?v="
--- cache-busters and serves a stale copy. If that happens, run this line
--- first, pointing at the "builds" folder (those URLs are always fresh):
---     getgenv().LINORIA_REPO = "https://raw.githubusercontent.com/omegayy/LinoriaLib/main/builds/"
--- (set getgenv().LINORIA_REPO = nil later to go back to the normal folder)
-local repo = getgenv().LINORIA_REPO or "https://raw.githubusercontent.com/omegayy/LinoriaLib/main/"
+-- Where the script files load from. raw.githubusercontent.com keeps a stale
+-- copy of some files, so a broken Library.lua comes back as "attempt to call
+-- a nil value" on the loadstring line. jsDelivr follows the latest commit.
+--     getgenv().LINORIA_REPO = "https://cdn.jsdelivr.net/gh/omegayy/LinoriaLib@main/builds/"
+local repo = getgenv().LINORIA_REPO or "https://cdn.jsdelivr.net/gh/omegayy/LinoriaLib@main/"
 
-local Library = loadstring(game:HttpGet(repo .. "Library.lua?v=" .. tostring(tick())))()
-local ThemeManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/omegayy/LinoriaLib/main/addons/ThemeManager.lua"))()
-local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/omegayy/LinoriaLib/main/addons/SaveManager.lua"))()
+local function FreshUrl(url)
+	local path = tostring(url):match("^https://raw%.githubusercontent%.com/omegayy/LinoriaLib/[^/]+/(.+)$")
+	if path then
+		path = path:gsub("%?.*$", "")
+		return "https://cdn.jsdelivr.net/gh/omegayy/LinoriaLib@main/" .. path
+	end
+	return url
+end
 
-print("[Linoria] Example r5 loaded")
+local function LoadLinoria(url)
+	url = FreshUrl(url)
+
+	local ok, body = pcall(function()
+		return game:HttpGet(url)
+	end)
+
+	if not ok or type(body) ~= "string" or #body < 50 then
+		error("[LinoriaLib] Download failed: " .. url .. "\n" .. tostring(body), 0)
+	end
+
+	local fn, err = loadstring(body, url)
+	if type(fn) ~= "function" then
+		error("[LinoriaLib] Compile failed: " .. url .. "\n" .. tostring(err), 0)
+	end
+
+	return fn()
+end
+
+local Library = LoadLinoria(repo .. "Library.lua")
+local ThemeManager = LoadLinoria(repo .. "addons/ThemeManager.lua")
+local SaveManager = LoadLinoria(repo .. "addons/SaveManager.lua")
+
+print("[Linoria] Example r6 loaded")
 
 
 local Options = Library.Options
