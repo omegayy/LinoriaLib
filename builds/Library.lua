@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-11-10r";
+    Version = "omgayy-2026-11-10s";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -1961,7 +1961,7 @@ do
             DisplayValue = nil; -- Picker Text
 
             Toggled = false;
-            Mode = Info.Mode or "Toggle"; -- Always, Toggle, Hold, Press
+            Mode = Info.Mode or "Toggle"; -- Always, Toggle, Hold, Tap, Press
             Idx = Idx;
             Text = Info.Text; --// legacy save key; HiddenKeybinds is stored by Idx
             Type = "KeyPicker";
@@ -1997,7 +1997,7 @@ do
         end
 
         if KeyPicker.SyncToggleState then
-            Info.Modes = { "Toggle", "Hold" }
+            Info.Modes = { "Always", "Toggle", "Hold", "Tap" }
 
             if not table.find(Info.Modes, Info.Mode) then
                 Info.Mode = "Toggle"
@@ -2363,7 +2363,7 @@ do
             Parent = ModeSelectInner;
         })
 
-        local Modes = Info.Modes or { "Always", "Toggle", "Hold" }
+        local Modes = Info.Modes or { "Always", "Toggle", "Hold", "Tap" }
         local ModeButtons = {}
         local UnbindButton = {}
 
@@ -2392,6 +2392,12 @@ do
                 Library.RegistryMap[Label].Properties.TextColor3 = "AccentColor"
 
                 ModeSelectOuter.Visible = false
+
+                -- Update is assigned further down. Right-click picks happen
+                -- after that, so Always turns the toggle on as soon as you choose it.
+                if type(KeyPicker.Update) == "function" then
+                    KeyPicker:Update()
+                end
             end
 
             function ModeButton:Deselect()
@@ -2642,7 +2648,9 @@ do
             local State = KeyPicker:GetState()
             local ShowToggle = Library.ShowToggleFrameInKeybinds and KeyPicker.Mode == "Toggle"
 
-            if KeyPicker.SyncToggleState and ParentObj.Value ~= State then
+            -- Tap runs the toggle itself for one press. Pushing GetState
+            -- here would turn that press back off before the callback runs.
+            if KeyPicker.SyncToggleState and KeyPicker.Mode ~= "Tap" and ParentObj.Value ~= State then
                 ParentObj:SetValue(State)
             end
 
@@ -2724,6 +2732,9 @@ do
         function KeyPicker:GetState()
             if KeyPicker.Mode == "Always" then
                 return true
+
+            elseif KeyPicker.Mode == "Tap" then
+                return false
             
             elseif KeyPicker.Mode == "Hold" then
                 local Key = KeyPicker.Value
@@ -2802,6 +2813,39 @@ do
 
         if ParentObj.Addons then
             table.insert(ParentObj.Addons, KeyPicker)
+        end
+
+        function KeyPicker:Tap()
+            if KeyPicker._TapBusy then
+                return
+            end
+
+            if KeyPicker.SyncToggleState and typeof(ParentObj) == "table" and type(ParentObj.SetValue) == "function" then
+                local WasOn = ParentObj.Value == true
+                KeyPicker._TapBusy = true
+                ParentObj:SetValue(true)
+                KeyPicker._TapBusy = false
+
+                if WasOn then
+                    return
+                end
+
+                task.spawn(function()
+                    RunService.Heartbeat:Wait()
+                    if Library.Unloaded or KeyPicker.Mode ~= "Tap" or KeyPicker._TapBusy then
+                        return
+                    end
+                    if typeof(ParentObj) == "table" and type(ParentObj.SetValue) == "function" and ParentObj.Value == true then
+                        ParentObj:SetValue(false)
+                    end
+                end)
+                return
+            end
+
+            KeyPicker.Toggled = true
+            Library:SafeCallback(KeyPicker.Callback, true)
+            Library:SafeCallback(KeyPicker.Clicked, true)
+            KeyPicker.Toggled = false
         end
 
         function KeyPicker:DoClick()
@@ -2986,9 +3030,13 @@ do
                         KeyPicker.Toggled = not KeyPicker.Toggled
                         KeyPicker:DoClick()
                     end
-                elseif KeyPicker.Mode == "Press" then
+                elseif KeyPicker.Mode == "Press" or KeyPicker.Mode == "Tap" then
                     if HoldingKey then
-                        KeyPicker:DoClick()
+                        if KeyPicker.Mode == "Tap" then
+                            KeyPicker:Tap()
+                        else
+                            KeyPicker:DoClick()
+                        end
                     end
                 end
 
