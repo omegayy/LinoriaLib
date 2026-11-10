@@ -87,11 +87,44 @@ local SaveManager = {} do
         },
         ColorPicker = {
             Save = function(idx, object)
-                return { type = 'ColorPicker', idx = idx, value = object.Value:ToHex(), transparency = object.Transparency }
+                local color = object.Value
+                local second = nil
+                if type(object.GetSlotColor) == "function" then
+                    local ok, base = pcall(function()
+                        return object:GetSlotColor(1)
+                    end)
+                    if ok and typeof(base) == "Color3" then
+                        color = base
+                    end
+
+                    local ok2, other = pcall(function()
+                        return object:GetSlotColor(2)
+                    end)
+                    if ok2 and typeof(other) == "Color3" then
+                        second = other:ToHex()
+                    end
+                end
+
+                return {
+                    type = 'ColorPicker',
+                    idx = idx,
+                    value = color:ToHex(),
+                    transparency = object.Transparency,
+                    animate = object.Animate == true,
+                    animation = object.Animation,
+                    speed = object.AnimSpeed,
+                    color2 = second,
+                }
             end,
             Load = function(idx, data)
-                if SaveManager.Library.Options[idx] then
-                    SaveManager.Library.Options[idx]:SetValueRGB(Color3.fromHex(data.value), data.transparency)
+                local object = SaveManager.Library.Options[idx]
+                if not object then
+                    return
+                end
+
+                object:SetValueRGB(Color3.fromHex(data.value), data.transparency)
+                if type(object.ApplyAnimation) == "function" then
+                    object:ApplyAnimation(data)
                 end
             end,
         },

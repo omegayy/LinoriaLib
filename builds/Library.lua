@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-11-10w";
+    Version = "omgayy-2026-11-10x";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -3099,6 +3099,23 @@ do
         return self
     end
 
+    Library._ColorAnimList = Library._ColorAnimList or {}
+    if not Library._ColorAnimConnected then
+        Library._ColorAnimConnected = true
+        RunService.RenderStepped:Connect(function()
+            if Library.Unloaded then
+                return
+            end
+
+            local now = os.clock()
+            for picker in next, Library._ColorAnimList do
+                if picker.Animate == true and type(picker.StepAnimation) == "function" then
+                    picker:StepAnimation(now)
+                end
+            end
+        end)
+    end
+
     function BaseAddonsFuncs:AddColorPicker(Idx, Info)
         local ParentObj = self
         local ToggleLabel = self.TextLabel
@@ -3145,6 +3162,133 @@ do
         end
 
         ColorPicker:SetHSVFromRGB(ColorPicker.Value)
+        ColorPicker.Animate = false
+        ColorPicker.Animation = "Rainbow"
+        ColorPicker.AnimSpeed = 50
+        ColorPicker.EditSlot = 1
+        ColorPicker.Slot1 = { ColorPicker.Hue, ColorPicker.Sat, ColorPicker.Vib }
+        ColorPicker.Slot2 = { 0, 0, 1 }
+
+        function ColorPicker:RememberSlot()
+            local pack = { ColorPicker.Hue, ColorPicker.Sat, ColorPicker.Vib }
+            if ColorPicker.EditSlot == 2 then
+                ColorPicker.Slot2 = pack
+            else
+                ColorPicker.Slot1 = pack
+            end
+        end
+
+        function ColorPicker:GetSlotColor(slot)
+            ColorPicker:RememberSlot()
+            local pack = slot == 2 and ColorPicker.Slot2 or ColorPicker.Slot1
+            if type(pack) ~= "table" then
+                return slot == 2 and Color3.new(1, 1, 1) or (ColorPicker.Value or Color3.new(1, 1, 1))
+            end
+            return Color3.fromHSV(pack[1] or 0, pack[2] or 0, pack[3] or 1)
+        end
+
+        function ColorPicker:SampleAnimation(now)
+            local speed = math.clamp(tonumber(ColorPicker.AnimSpeed) or 50, 0, 100)
+            local rate = 0.35 + (speed / 100) * 2.4
+            local phase = (now or os.clock()) * rate
+            local mode = ColorPicker.Animation or "Rainbow"
+            local first = ColorPicker:GetSlotColor(1)
+            local second = ColorPicker:GetSlotColor(2)
+
+            if mode == "Shadow" then
+                local alpha = (math.sin(phase * math.pi * 2) + 1) / 2
+                return first:Lerp(Color3.new(0, 0, 0), alpha)
+            elseif mode == "Fading" then
+                local alpha = (math.sin(phase * math.pi * 2) + 1) / 2
+                return first:Lerp(second, alpha)
+            elseif mode == "Oscillate" then
+                local x = phase % 1
+                local alpha = x < 0.5 and (x * 2) or (2 - x * 2)
+                return first:Lerp(second, alpha)
+            elseif mode == "Sawtooth" then
+                return first:Lerp(second, phase % 1)
+            elseif mode == "Strobe" then
+                return (math.floor(phase * 2) % 2 == 0) and first or second
+            end
+
+            return Color3.fromHSV(phase % 1, 1, 1)
+        end
+
+        function ColorPicker:StepAnimation(now)
+            if ColorPicker.Animate ~= true then
+                return
+            end
+
+            local color = ColorPicker:SampleAnimation(now)
+            if ColorPicker.Value == color then
+                return
+            end
+
+            ColorPicker.Value = color
+            if ColorPicker.DisplayFrame then
+                ColorPicker.DisplayFrame.BackgroundColor3 = color
+                ColorPicker.DisplayFrame.BackgroundTransparency = ColorPicker.Transparency or 0
+                ColorPicker.DisplayFrame.BorderColor3 = Library:GetDarkerColor(color)
+            end
+            RunCallback()
+        end
+
+        function ColorPicker:SetAnimate(on)
+            ColorPicker.Animate = on and true or false
+            if ColorPicker.Animate then
+                Library._ColorAnimList[ColorPicker] = true
+            else
+                Library._ColorAnimList[ColorPicker] = nil
+                ColorPicker.Value = ColorPicker:GetSlotColor(1)
+            end
+
+            if type(ColorPicker.Display) == "function" then
+                ColorPicker:Display()
+            end
+            if not ColorPicker.Animate then
+                RunCallback()
+            end
+        end
+
+        function ColorPicker:ApplyAnimation(data)
+            if type(data) ~= "table" then
+                return
+            end
+
+            if type(data.animation) == "string" and data.animation ~= "" then
+                ColorPicker.Animation = data.animation
+            end
+
+            local speed = tonumber(data.speed)
+            if speed then
+                ColorPicker.AnimSpeed = math.clamp(speed, 0, 100)
+            end
+
+            if type(data.color2) == "string" then
+                local ok, col = pcall(Color3.fromHex, data.color2)
+                if ok and typeof(col) == "Color3" then
+                    local h, s, v = col:ToHSV()
+                    ColorPicker.Slot2 = { h, s, v }
+                end
+            end
+
+            ColorPicker:SetAnimate(data.animate == true)
+        end
+
+        function ColorPicker:EditColorSlot(slot)
+            ColorPicker:RememberSlot()
+            ColorPicker.EditSlot = slot == 2 and 2 or 1
+            local pack = ColorPicker.EditSlot == 2 and ColorPicker.Slot2 or ColorPicker.Slot1
+            if type(pack) == "table" then
+                ColorPicker.Hue, ColorPicker.Sat, ColorPicker.Vib = pack[1] or 0, pack[2] or 0, pack[3] or 1
+            end
+            if type(ColorPicker.SetPage) == "function" then
+                ColorPicker:SetPage("Color")
+            end
+            if type(ColorPicker.Display) == "function" then
+                ColorPicker:Display()
+            end
+        end
 
         local DisplayFrame = Library:Create("Frame", {
             BackgroundColor3 = ColorPicker.Value;
@@ -3176,7 +3320,7 @@ do
             BackgroundColor3 = Library.BackgroundColor;
             BorderColor3 = Color3.new(0, 0, 0);
             Position = UDim2.fromOffset(DisplayFrame.AbsolutePosition.X, DisplayFrame.AbsolutePosition.Y + 18),
-            Size = UDim2.fromOffset(230, Info.Transparency ~= nil and 271 or 253);
+            Size = UDim2.fromOffset(230, Info.Transparency ~= nil and 289 or 271);
             Visible = false;
             ZIndex = 15;
             Parent = ScreenGui,
@@ -3206,7 +3350,7 @@ do
         local SatVibMapOuter = Library:Create("Frame", {
             BackgroundColor3 = Library.BackgroundColor;
             BorderColor3 = Color3.new(0, 0, 0);
-            Position = UDim2.new(0, 4, 0, 25);
+            Position = UDim2.new(0, 4, 0, 43);
             Size = UDim2.new(0, 200, 0, 200);
             ZIndex = 17;
             Parent = PickerFrameInner;
@@ -3252,7 +3396,7 @@ do
         local HueSelectorOuter = Library:Create("Frame", {
             BackgroundColor3 = Library.BackgroundColor;
             BorderColor3 = Color3.new(0, 0, 0);
-            Position = UDim2.new(0, 208, 0, 25);
+            Position = UDim2.new(0, 208, 0, 43);
             Size = UDim2.new(0, 15, 0, 200);
             ZIndex = 17;
             Parent = PickerFrameInner;
@@ -3278,7 +3422,7 @@ do
         local HueBoxOuter = Library:Create("Frame", {
             BackgroundColor3 = Library.BackgroundColor;
             BorderColor3 = Color3.new(0, 0, 0);
-            Position = UDim2.fromOffset(4, 228),
+            Position = UDim2.fromOffset(4, 246),
             Size = UDim2.new(0.5, -6, 0, 20),
             ZIndex = 18,
             Parent = PickerFrameInner;
@@ -3321,7 +3465,7 @@ do
         Library:ApplyTextStroke(HueBox)
 
         local RgbBoxBase = Library:Create(HueBoxOuter:Clone(), {
-            Position = UDim2.new(0.5, 2, 0, 228),
+            Position = UDim2.new(0.5, 2, 0, 246),
             Size = UDim2.new(0.5, -6, 0, 20),
             Parent = PickerFrameInner
         })
@@ -3338,7 +3482,7 @@ do
             TransparencyBoxOuter = Library:Create("Frame", {
                 BackgroundColor3 = Library.BackgroundColor;
                 BorderColor3 = Color3.new(0, 0, 0);
-                Position = UDim2.fromOffset(4, 251);
+                Position = UDim2.fromOffset(4, 269);
                 Size = UDim2.new(1, -8, 0, 15);
                 ZIndex = 19;
                 Parent = PickerFrameInner;
@@ -3384,6 +3528,291 @@ do
             ZIndex = 16;
             Parent = PickerFrameInner;
         })
+
+        local ColorTabButton, SettingsTabButton
+        local ColorUnderline, SettingsUnderline
+        local SettingsPage
+        local AnimToggleFill
+        local AnimModeButton
+        local AnimList
+        local SpeedFill
+        local SpeedValueLabel
+        local Slot1Swatch, Slot2Swatch
+
+        local TabBar = Library:Create("Frame", {
+            BackgroundTransparency = 1;
+            Position = UDim2.fromOffset(4, 20);
+            Size = UDim2.new(1, -8, 0, 16);
+            ZIndex = 20;
+            Parent = PickerFrameInner;
+        })
+
+        local function MakePickerTab(text, offset)
+            local button = Library:Create("TextButton", {
+                AutoButtonColor = false;
+                BackgroundTransparency = 1;
+                Position = UDim2.fromOffset(offset, 0);
+                Size = UDim2.fromOffset(64, 16);
+                Font = Library.Font;
+                Text = text;
+                TextColor3 = Library.FontColor;
+                TextSize = 13;
+                ZIndex = 21;
+                Parent = TabBar;
+            })
+            Library:ApplyTextStroke(button)
+            local line = Library:Create("Frame", {
+                BackgroundColor3 = Library.AccentColor;
+                BorderSizePixel = 0;
+                Position = UDim2.new(0, 0, 1, -1);
+                Size = UDim2.new(1, 0, 0, 1);
+                Visible = false;
+                ZIndex = 22;
+                Parent = button;
+            })
+            Library:AddToRegistry(button, { TextColor3 = "FontColor" })
+            Library:AddToRegistry(line, { BackgroundColor3 = "AccentColor" })
+            return button, line
+        end
+
+        ColorTabButton, ColorUnderline = MakePickerTab("Color", 0)
+        SettingsTabButton, SettingsUnderline = MakePickerTab("Settings", 68)
+        ColorUnderline.Visible = true
+
+        SettingsPage = Library:Create("Frame", {
+            BackgroundTransparency = 1;
+            Position = UDim2.fromOffset(4, 42);
+            Size = UDim2.new(1, -8, 1, -48);
+            Visible = false;
+            ZIndex = 20;
+            Parent = PickerFrameInner;
+        })
+
+        local function FieldLabel(text, y)
+            return Library:CreateLabel({
+                Position = UDim2.fromOffset(0, y);
+                Size = UDim2.fromOffset(80, 16);
+                Text = text;
+                TextSize = 13;
+                TextXAlignment = Enum.TextXAlignment.Left;
+                ZIndex = 21;
+                Parent = SettingsPage;
+            })
+        end
+
+        FieldLabel("Animate", 2)
+
+        local AnimToggle = Library:Create("TextButton", {
+            AutoButtonColor = false;
+            BackgroundColor3 = Library.MainColor;
+            BorderColor3 = Library.OutlineColor;
+            Position = UDim2.new(1, -28, 0, 2);
+            Size = UDim2.fromOffset(28, 14);
+            Text = "";
+            ZIndex = 22;
+            Parent = SettingsPage;
+        })
+        Library:AddToRegistry(AnimToggle, { BackgroundColor3 = "MainColor"; BorderColor3 = "OutlineColor" })
+
+        AnimToggleFill = Library:Create("Frame", {
+            BackgroundColor3 = Library.AccentColor;
+            BorderSizePixel = 0;
+            Position = UDim2.fromOffset(2, 2);
+            Size = UDim2.new(1, -4, 1, -4);
+            Visible = false;
+            ZIndex = 23;
+            Parent = AnimToggle;
+        })
+        Library:AddToRegistry(AnimToggleFill, { BackgroundColor3 = "AccentColor" })
+
+        FieldLabel("Animation", 24)
+
+        AnimModeButton = Library:Create("TextButton", {
+            AutoButtonColor = false;
+            BackgroundColor3 = Library.MainColor;
+            BorderColor3 = Library.OutlineColor;
+            Position = UDim2.new(0, 84, 0, 22);
+            Size = UDim2.new(1, -84, 0, 18);
+            Font = Library.Font;
+            Text = "Rainbow";
+            TextColor3 = Library.FontColor;
+            TextSize = 13;
+            ZIndex = 22;
+            Parent = SettingsPage;
+        })
+        Library:ApplyTextStroke(AnimModeButton)
+        Library:AddToRegistry(AnimModeButton, {
+            BackgroundColor3 = "MainColor";
+            BorderColor3 = "OutlineColor";
+            TextColor3 = "FontColor";
+        })
+
+        local AnimModes = { "Rainbow", "Shadow", "Fading", "Oscillate", "Sawtooth", "Strobe" }
+        AnimList = Library:Create("Frame", {
+            BackgroundColor3 = Library.BackgroundColor;
+            BorderColor3 = Library.OutlineColor;
+            Position = UDim2.new(0, 84, 0, 42);
+            Size = UDim2.new(1, -84, 0, #AnimModes * 16);
+            Visible = false;
+            ZIndex = 40;
+            Parent = SettingsPage;
+        })
+        Library:AddToRegistry(AnimList, { BackgroundColor3 = "BackgroundColor"; BorderColor3 = "OutlineColor" })
+        Library:Create("UIListLayout", {
+            FillDirection = Enum.FillDirection.Vertical;
+            SortOrder = Enum.SortOrder.LayoutOrder;
+            Parent = AnimList;
+        })
+
+        for index, mode in ipairs(AnimModes) do
+            local option = Library:Create("TextButton", {
+                AutoButtonColor = false;
+                BackgroundColor3 = Library.MainColor;
+                BorderSizePixel = 0;
+                LayoutOrder = index;
+                Size = UDim2.new(1, 0, 0, 16);
+                Font = Library.Font;
+                Text = mode;
+                TextColor3 = Library.FontColor;
+                TextSize = 13;
+                ZIndex = 41;
+                Parent = AnimList;
+            })
+            Library:ApplyTextStroke(option)
+            Library:AddToRegistry(option, { BackgroundColor3 = "MainColor"; TextColor3 = "FontColor" })
+            option.MouseButton1Click:Connect(function()
+                ColorPicker.Animation = mode
+                AnimList.Visible = false
+                AnimModeButton.Text = mode
+                Library:AttemptSave()
+            end)
+        end
+
+        FieldLabel("Speed", 48)
+
+        SpeedValueLabel = Library:CreateLabel({
+            Position = UDim2.new(1, -42, 0, 48);
+            Size = UDim2.fromOffset(42, 16);
+            Text = "50%";
+            TextSize = 13;
+            TextXAlignment = Enum.TextXAlignment.Right;
+            ZIndex = 21;
+            Parent = SettingsPage;
+        })
+
+        local SpeedTrack = Library:Create("TextButton", {
+            AutoButtonColor = false;
+            BackgroundColor3 = Library.MainColor;
+            BorderColor3 = Library.OutlineColor;
+            Position = UDim2.fromOffset(0, 68);
+            Size = UDim2.new(1, 0, 0, 12);
+            Text = "";
+            ZIndex = 22;
+            Parent = SettingsPage;
+        })
+        Library:AddToRegistry(SpeedTrack, { BackgroundColor3 = "MainColor"; BorderColor3 = "OutlineColor" })
+
+        SpeedFill = Library:Create("Frame", {
+            BackgroundColor3 = Library.AccentColor;
+            BorderSizePixel = 0;
+            Size = UDim2.new(0.5, 0, 1, 0);
+            ZIndex = 23;
+            Parent = SpeedTrack;
+        })
+        Library:AddToRegistry(SpeedFill, { BackgroundColor3 = "AccentColor" })
+
+        FieldLabel("Color", 90)
+
+        local function MakeAnimSwatch(offset)
+            return Library:Create("TextButton", {
+                AutoButtonColor = false;
+                BackgroundColor3 = Color3.new(1, 1, 1);
+                BorderColor3 = Library.OutlineColor;
+                Position = UDim2.new(1, offset, 0, 88);
+                Size = UDim2.fromOffset(28, 16);
+                Text = "";
+                ZIndex = 22;
+                Parent = SettingsPage;
+            })
+        end
+
+        Slot2Swatch = MakeAnimSwatch(-28)
+        Slot1Swatch = MakeAnimSwatch(-60)
+
+        function ColorPicker:SetPage(page)
+            local showColor = page ~= "Settings"
+            SatVibMapOuter.Visible = showColor
+            HueSelectorOuter.Visible = showColor
+            HueBoxOuter.Visible = showColor
+            RgbBoxBase.Visible = showColor
+            if TransparencyBoxOuter then
+                TransparencyBoxOuter.Visible = showColor
+            end
+            SettingsPage.Visible = not showColor
+            ColorUnderline.Visible = showColor
+            SettingsUnderline.Visible = not showColor
+            if showColor then
+                AnimList.Visible = false
+            end
+        end
+
+        function ColorPicker:RefreshAnimUi()
+            AnimToggleFill.Visible = ColorPicker.Animate == true
+            AnimModeButton.Text = ColorPicker.Animation or "Rainbow"
+            local speed = math.clamp(tonumber(ColorPicker.AnimSpeed) or 50, 0, 100)
+            SpeedFill.Size = UDim2.new(speed / 100, 0, 1, 0)
+            SpeedValueLabel.Text = tostring(math.floor(speed + 0.5)) .. "%"
+
+            local first = ColorPicker:GetSlotColor(1)
+            local second = ColorPicker:GetSlotColor(2)
+            Slot1Swatch.BackgroundColor3 = first
+            Slot2Swatch.BackgroundColor3 = second
+            Slot1Swatch.BorderColor3 = ColorPicker.EditSlot == 1 and Library.AccentColor or Library.OutlineColor
+            Slot2Swatch.BorderColor3 = ColorPicker.EditSlot == 2 and Library.AccentColor or Library.OutlineColor
+        end
+
+        ColorTabButton.MouseButton1Click:Connect(function()
+            ColorPicker:SetPage("Color")
+        end)
+        SettingsTabButton.MouseButton1Click:Connect(function()
+            ColorPicker:SetPage("Settings")
+        end)
+        AnimToggle.MouseButton1Click:Connect(function()
+            ColorPicker:SetAnimate(ColorPicker.Animate ~= true)
+            Library:AttemptSave()
+        end)
+        AnimModeButton.MouseButton1Click:Connect(function()
+            AnimList.Visible = not AnimList.Visible
+        end)
+
+        local function ApplyAnimSpeed(mouseX)
+            local minX = SpeedTrack.AbsolutePosition.X
+            local width = math.max(SpeedTrack.AbsoluteSize.X, 1)
+            local alpha = math.clamp((mouseX - minX) / width, 0, 1)
+            ColorPicker.AnimSpeed = math.floor(alpha * 100 + 0.5)
+            SpeedFill.Size = UDim2.new(alpha, 0, 1, 0)
+            SpeedValueLabel.Text = tostring(ColorPicker.AnimSpeed) .. "%"
+        end
+
+        SpeedTrack.InputBegan:Connect(function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
+                return
+            end
+
+            while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
+                ApplyAnimSpeed(Mouse.X)
+                RunService.RenderStepped:Wait()
+            end
+
+            Library:AttemptSave()
+        end)
+
+        Slot1Swatch.MouseButton1Click:Connect(function()
+            ColorPicker:EditColorSlot(1)
+        end)
+        Slot2Swatch.MouseButton1Click:Connect(function()
+            ColorPicker:EditColorSlot(2)
+        end)
 
         local ContextMenu = {}
         do
@@ -3562,25 +3991,37 @@ do
         })
 
         function ColorPicker:Display()
-            ColorPicker.Value = Color3.fromHSV(ColorPicker.Hue, ColorPicker.Sat, ColorPicker.Vib)
-            SatVibMap.BackgroundColor3 = Color3.fromHSV(ColorPicker.Hue, 1, 1)
+            ColorPicker:RememberSlot()
+
+            local editing = Color3.fromHSV(ColorPicker.Hue, ColorPicker.Sat, ColorPicker.Vib)
+            if ColorPicker.Animate ~= true then
+                ColorPicker.Value = ColorPicker:GetSlotColor(1)
+            end
+
+            local output = ColorPicker.Animate == true and ColorPicker.Value or ColorPicker:GetSlotColor(1)
 
             Library:Create(DisplayFrame, {
-                BackgroundColor3 = ColorPicker.Value;
+                BackgroundColor3 = output;
                 BackgroundTransparency = ColorPicker.Transparency;
-                BorderColor3 = Library:GetDarkerColor(ColorPicker.Value);
+                BorderColor3 = Library:GetDarkerColor(output);
             })
 
+            SatVibMap.BackgroundColor3 = Color3.fromHSV(ColorPicker.Hue, 1, 1)
+
             if TransparencyBoxInner then
-                TransparencyBoxInner.BackgroundColor3 = ColorPicker.Value
+                TransparencyBoxInner.BackgroundColor3 = editing
                 TransparencyCursor.Position = UDim2.new(1 - ColorPicker.Transparency, 0, 0, 0)
             end
 
             CursorOuter.Position = UDim2.new(ColorPicker.Sat, 0, 1 - ColorPicker.Vib, 0)
             HueCursor.Position = UDim2.new(0, 0, ColorPicker.Hue, 0)
 
-            HueBox.Text = "#" .. ColorPicker.Value:ToHex()
-            RgbBox.Text = table.concat({ math.floor(ColorPicker.Value.R * 255), math.floor(ColorPicker.Value.G * 255), math.floor(ColorPicker.Value.B * 255) }, ", ")
+            HueBox.Text = "#" .. editing:ToHex()
+            RgbBox.Text = table.concat({ math.floor(editing.R * 255), math.floor(editing.G * 255), math.floor(editing.B * 255) }, ", ")
+
+            if type(ColorPicker.RefreshAnimUi) == "function" then
+                ColorPicker:RefreshAnimUi()
+            end
         end
 
         function ColorPicker:OnChanged(Func)
@@ -3627,6 +4068,7 @@ do
         end
 
         function ColorPicker:SetValueRGB(Color, Transparency)
+            ColorPicker.EditSlot = 1
             ColorPicker.Transparency = Transparency or 0
             ColorPicker:SetHSVFromRGB(Color)
             ColorPicker:Display()
