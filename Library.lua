@@ -268,6 +268,9 @@ local Library = {
 
     -- variables --
     VideoLink = "";
+    BackgroundImage = "";
+    BackgroundImageTransparency = 0.75;
+    WatermarkTransparency = 0;
     
     Toggled = false;
     ToggleKeybind = nil;
@@ -431,6 +434,99 @@ function Library:GetIcon(IconName: string)
     end
 
     return Icon
+end
+
+function Library:GetImageAssetFromUrl(Url)
+    if typeof(Url) ~= "string" or Url == "" then
+        return nil
+    end
+
+    if typeof(getcustomasset) ~= "function" or typeof(writefile) ~= "function" then
+        return nil
+    end
+
+    local Folder = "LinoriaLibSettings/themes/backgrounds"
+    if Library.ThemeManager and typeof(Library.ThemeManager.Folder) == "string" and Library.ThemeManager.Folder ~= "" then
+        Folder = Library.ThemeManager.Folder .. "/themes/backgrounds"
+    end
+
+    if typeof(makefolder) == "function" and typeof(isfolder) == "function" then
+        pcall(function()
+            if not isfolder(Folder) then
+                makefolder(Folder)
+            end
+        end)
+    end
+
+    local Ext = (Url:match("%.([%w]+)%f[%W]") or "png"):lower()
+    if Ext ~= "png" and Ext ~= "jpg" and Ext ~= "jpeg" and Ext ~= "webp" and Ext ~= "gif" then
+        Ext = "png"
+    end
+
+    local Name = Url:gsub("[^%w]", ""):sub(1, 48)
+    if Name == "" then
+        Name = "image"
+    end
+
+    local Path = Folder .. "/" .. Name .. "." .. Ext
+
+    local function Download(Target)
+        local Req = request or http_request or (http and http.request)
+        if typeof(Req) == "function" then
+            local Ok, Res = pcall(Req, { Url = Target, Method = "GET" })
+            if Ok and typeof(Res) == "table" and typeof(Res.Body) == "string" and #Res.Body > 0 then
+                return Res.Body
+            end
+        end
+
+        local Ok, Body = pcall(function()
+            return game:HttpGet(Target)
+        end)
+
+        if Ok and typeof(Body) == "string" and #Body > 0 then
+            return Body
+        end
+
+        return nil
+    end
+
+    local Exists = false
+    if typeof(isfile) == "function" then
+        local Ok, Result = pcall(isfile, Path)
+        Exists = Ok and Result == true
+    end
+
+    if not Exists then
+        local Body = Download(Url)
+        if not Body then
+            return nil
+        end
+
+        local Wrote = pcall(writefile, Path, Body)
+        if not Wrote then
+            return nil
+        end
+    end
+
+    local AssetOk, Asset = pcall(getcustomasset, Path)
+    if AssetOk and typeof(Asset) == "string" and Asset ~= "" then
+        return Asset
+    end
+
+    return nil
+end
+
+function Library:SetBackgroundImage(Source)
+    if typeof(Source) ~= "string" then
+        Source = ""
+    end
+
+    Library.BackgroundImage = Source
+
+    local Window = Library.Window
+    if typeof(Window) == "table" and type(Window.SetBackgroundImage) == "function" then
+        Window:SetBackgroundImage(Source)
+    end
 end
 
 function Library:GetCustomIcon(IconName: string)
@@ -2914,7 +3010,7 @@ do
                 end
 
                 local Button = Library:CreateLabel({
-                    Active = false;
+                    Active = true;
                     Size = UDim2.new(1, 0, 0, 15);
                     TextSize = 13;
                     Text = Str;
@@ -2929,10 +3025,11 @@ do
                 )
 
                 Button.InputBegan:Connect(function(Input)
-                    if Input.UserInputType ~= Enum.UserInputType.MouseButton1 or Input.UserInputType ~= Enum.UserInputType.Touch then
+                    if Input.UserInputType ~= Enum.UserInputType.MouseButton1 and Input.UserInputType ~= Enum.UserInputType.Touch then
                         return
                     end
 
+                    self:Hide()
                     Callback()
                 end)
             end
@@ -4931,11 +5028,11 @@ do
     end
 
     function BaseGroupboxFuncs:AddSlider(Idx, Info)
-        assert(Info.Default,    string.format("AddSlider (IDX: %s): Missing default value.", tostring(Idx)))
+        assert(Info.Default ~= nil, string.format("AddSlider (IDX: %s): Missing default value.", tostring(Idx)))
         assert(Info.Text,       string.format("AddSlider (IDX: %s): Missing slider text.", tostring(Idx)))
-        assert(Info.Min,        string.format("AddSlider (IDX: %s): Missing minimum value.", tostring(Idx)))
-        assert(Info.Max,        string.format("AddSlider (IDX: %s): Missing maximum value.", tostring(Idx)))
-        assert(Info.Rounding,   string.format("AddSlider (IDX: %s): Missing rounding value.", tostring(Idx)))
+        assert(Info.Min ~= nil, string.format("AddSlider (IDX: %s): Missing minimum value.", tostring(Idx)))
+        assert(Info.Max ~= nil, string.format("AddSlider (IDX: %s): Missing maximum value.", tostring(Idx)))
+        assert(Info.Rounding ~= nil, string.format("AddSlider (IDX: %s): Missing rounding value.", tostring(Idx)))
 
         local Slider = {
             Value = Info.Default;
@@ -6975,6 +7072,63 @@ do
         print("[Popout] Applied " .. Count .. " layout(s) to " .. #Library.Popouts .. " popout(s)")
     end
 
+    local function PackFrame(Frame, IncludeSize)
+        if typeof(Frame) ~= "Instance" then
+            return nil
+        end
+
+        local Layout = {
+            Position = { Frame.Position.X.Scale, Frame.Position.X.Offset, Frame.Position.Y.Scale, Frame.Position.Y.Offset };
+        }
+
+        if IncludeSize then
+            Layout.Size = { Frame.Size.X.Scale, Frame.Size.X.Offset, Frame.Size.Y.Scale, Frame.Size.Y.Offset }
+        end
+
+        return Layout
+    end
+
+    local function ApplyPackedFrame(Frame, Saved, IncludeSize)
+        if typeof(Frame) ~= "Instance" or typeof(Saved) ~= "table" then
+            return
+        end
+
+        local Position = Saved.Position
+        if typeof(Position) == "table" then
+            Frame.Position = UDim2.new(Position[1] or 0, Position[2] or 0, Position[3] or 0, Position[4] or 0)
+        end
+
+        if IncludeSize then
+            local Size = Saved.Size
+            if typeof(Size) == "table" then
+                Frame.Size = UDim2.new(Size[1] or 0, Size[2] or 0, Size[3] or 0, Size[4] or 0)
+            end
+        end
+    end
+
+    --// Positions of the pieces you drag around. Saved inside every config. \\--
+    function Library:GetHudLayout()
+        return {
+            Window = PackFrame(Library.Window and Library.Window.Holder, true);
+            KeybindMenu = PackFrame(Library.KeybindFrame, false);
+            Watermark = PackFrame(Library.Watermark, false);
+            ToggleUI = PackFrame(Library.ToggleUI, false);
+            LockUI = PackFrame(Library.LockUI, false);
+        }
+    end
+
+    function Library:ApplyHudLayout(Data)
+        if typeof(Data) ~= "table" then
+            return
+        end
+
+        ApplyPackedFrame(Library.Window and Library.Window.Holder, Data.Window, true)
+        ApplyPackedFrame(Library.KeybindFrame, Data.KeybindMenu, false)
+        ApplyPackedFrame(Library.Watermark, Data.Watermark, false)
+        ApplyPackedFrame(Library.ToggleUI, Data.ToggleUI, false)
+        ApplyPackedFrame(Library.LockUI, Data.LockUI, false)
+    end
+
     function Library:UpdatePopouts()
         for _, Popout in ipairs(Library.Popouts) do
             Popout:UpdateVisibility()
@@ -8486,6 +8640,7 @@ do
         --// Persist transparency settings \\--
         Library.KeybindFilters.KeybindTransparency = Library.KeybindTransparency
         Library.KeybindFilters.PopoutTransparency = Library.PopoutTransparency
+        Library.KeybindFilters.WatermarkTransparency = Library.WatermarkTransparency
 
         local Ok, Encoded = pcall(function()
             return FilterHttp:JSONEncode(Library.KeybindFilters or {})
@@ -8520,6 +8675,7 @@ do
                 HiddenKeybinds = (typeof(Data.HiddenKeybinds) == "table" and Data.HiddenKeybinds) or {};
                 KeybindTransparency = (typeof(Data.KeybindTransparency) == "number" and Data.KeybindTransparency) or 0;
                 PopoutTransparency = (typeof(Data.PopoutTransparency) == "number" and Data.PopoutTransparency) or 0;
+                WatermarkTransparency = (typeof(Data.WatermarkTransparency) == "number" and Data.WatermarkTransparency) or 0;
             }
 
             --// Apply per-keybind visibility \\--
@@ -8543,9 +8699,14 @@ do
 
             --// Apply transparency \\--
             Library.PopoutTransparency = Library.KeybindFilters.PopoutTransparency or 0
+            Library.WatermarkTransparency = Library.KeybindFilters.WatermarkTransparency or 0
 
             if type(Library.SetKeybindTransparency) == "function" then
                 Library:SetKeybindTransparency(Library.KeybindFilters.KeybindTransparency or 0, true)
+            end
+
+            if type(Library.SetWatermarkTransparency) == "function" then
+                Library:SetWatermarkTransparency(Library.WatermarkTransparency, true)
             end
 
             Library:RefreshKeybindList()
@@ -8616,6 +8777,8 @@ do
     })
 
     Library.Watermark = WatermarkOuter
+    Library.WatermarkInner = WatermarkInner
+    Library.WatermarkFill = InnerFrame
     Library.WatermarkText = WatermarkLabel
     Library:MakeDraggable(Library.Watermark)
 
@@ -8629,6 +8792,41 @@ do
         Library:SetWatermarkVisibility(true)
 
         Library.WatermarkText.Text = Text
+    end
+
+    function Library:SetWatermarkTransparency(Value, SkipSave)
+        Value = tonumber(Value)
+        if Value == nil then
+            return
+        end
+
+        Value = math.clamp(Value, 0, 1)
+        Library.WatermarkTransparency = Value
+
+        if Library.Watermark then
+            Library.Watermark.BackgroundTransparency = Value
+        end
+        if Library.WatermarkInner then
+            Library.WatermarkInner.BackgroundTransparency = Value
+        end
+        if Library.WatermarkFill then
+            Library.WatermarkFill.BackgroundTransparency = Value
+        end
+
+        local Slider = Options and Options.Options_WatermarkTransparency
+        local Percent = math.floor(Value * 100 + 0.5)
+        if type(Slider) == "table" and Slider.Value ~= Percent and type(Slider.Display) == "function" then
+            Slider.Value = Percent
+            Slider:Display()
+        end
+
+        if SkipSave ~= true and type(Library.SaveKeybindFilters) == "function" then
+            Library:SaveKeybindFilters()
+        end
+    end
+
+    if Library.KeybindFilters and typeof(Library.KeybindFilters.WatermarkTransparency) == "number" then
+        Library:SetWatermarkTransparency(Library.KeybindFilters.WatermarkTransparency, true)
     end
 end
 
@@ -9654,6 +9852,44 @@ function Library:CreateWindow(...)
 
         Panel:AddDivider()
 
+        --// Same toggle as the UI Settings tab. If that one already exists,
+        --// keep the two checkboxes on the same value. \\--
+        local KeybindMenuToggle = Panel:AddToggle("Options_KeybindMenuOpen", {
+            Text = "Open Keybind Menu";
+            Default = Library.KeybindFrame and Library.KeybindFrame.Visible or false;
+            Callback = function(Value)
+                if Library.KeybindFrame then
+                    Library.KeybindFrame.Visible = Value and true or false
+                end
+            end;
+        })
+
+        local ExistingKeybindMenu = Toggles.KeybindMenuOpen
+        if ExistingKeybindMenu and ExistingKeybindMenu ~= KeybindMenuToggle and type(Library.BindElements) == "function" then
+            Library:BindElements(ExistingKeybindMenu, KeybindMenuToggle)
+
+            if ExistingKeybindMenu.Value ~= KeybindMenuToggle.Value then
+                KeybindMenuToggle:SetValue(ExistingKeybindMenu.Value)
+            end
+        end
+
+        local CursorToggle = Panel:AddToggle("Options_ShowCustomCursor", {
+            Text = "Custom Cursor";
+            Default = Library.ShowCustomCursor ~= false;
+            Callback = function(Value)
+                Library.ShowCustomCursor = Value and true or false
+            end;
+        })
+
+        local ExistingCursor = Toggles.ShowCustomCursor
+        if ExistingCursor and ExistingCursor ~= CursorToggle and type(Library.BindElements) == "function" then
+            Library:BindElements(ExistingCursor, CursorToggle)
+
+            if ExistingCursor.Value ~= CursorToggle.Value then
+                ExistingCursor:SetValue(CursorToggle.Value)
+            end
+        end
+
         --// Keybind menu transparency \\--
         Panel:AddSlider("Options_KeybindTransparency", {
             Text = "Keybind Menu Transparency";
@@ -9662,6 +9898,16 @@ function Library:CreateWindow(...)
         }):OnChanged(function(Value)
             if type(Library.SetKeybindTransparency) == "function" then
                 Library:SetKeybindTransparency(Value / 100)
+            end
+        end)
+
+        Panel:AddSlider("Options_WatermarkTransparency", {
+            Text = "Watermark Transparency";
+            Default = math.floor((Library.WatermarkTransparency or 0) * 100 + 0.5);
+            Min = 0; Max = 100; Rounding = 0; Suffix = "%";
+        }):OnChanged(function(Value)
+            if type(Library.SetWatermarkTransparency) == "function" then
+                Library:SetWatermarkTransparency(Value / 100)
             end
         end)
 
@@ -9998,24 +10244,58 @@ function Library:CreateWindow(...)
     end
 
     function Window:SetBackgroundImage(NewImage)
-        if tonumber(NewImage) then
-            NewImage = "rbxassetid://" .. NewImage
+        if NewImage == nil then
+            NewImage = ""
         end
 
-        assert(typeof(NewImage) == "string", "Image must be a string.")
+        if tonumber(NewImage) then
+            NewImage = "rbxassetid://" .. tostring(NewImage)
+        end
 
-        local Icon = Library:GetCustomIcon(NewImage)
-        if not Icon then
+        if typeof(NewImage) ~= "string" then
+            return
+        end
+
+        Library.BackgroundImage = NewImage
+
+        local Trimmed = NewImage:match("^%s*(.-)%s*$") or ""
+        if Trimmed == "" then
+            BackgroundImage.Image = ""
             BackgroundImage.Visible = false
             return
         end
-        
-        assert(Icon, "Image must be a valid Roblox asset or a valid URL or a valid lucide icon.")
+
+        local Resolved = Trimmed
+        local Lower = Trimmed:lower()
+
+        if Lower:match("^https?://") then
+            Resolved = Library:GetImageAssetFromUrl(Trimmed) or Trimmed
+        elseif typeof(isfile) == "function" and typeof(getcustomasset) == "function" then
+            local ExistsOk, Exists = pcall(isfile, Trimmed)
+            if ExistsOk and Exists then
+                local AssetOk, Asset = pcall(getcustomasset, Trimmed)
+                if AssetOk and typeof(Asset) == "string" and Asset ~= "" then
+                    Resolved = Asset
+                end
+            end
+        end
+
+        local Icon = Library:GetCustomIcon(Resolved)
+        if not Icon or typeof(Icon.Url) ~= "string" or Icon.Url == "" then
+            BackgroundImage.Visible = false
+            return
+        end
 
         BackgroundImage.Image = Icon.Url
-        BackgroundImage.ImageRectOffset = Icon.ImageRectOffset
-        BackgroundImage.ImageRectSize = Icon.ImageRectSize
+        BackgroundImage.ImageRectOffset = Icon.ImageRectOffset or Vector2.zero
+        BackgroundImage.ImageRectSize = Icon.ImageRectSize or Vector2.zero
 
+        local Trans = Library.BackgroundImageTransparency
+        if typeof(Trans) ~= "number" then
+            Trans = 0.75
+        end
+
+        BackgroundImage.ImageTransparency = math.clamp(Trans, 0, 1)
         BackgroundImage.Visible = true
     end
 
@@ -11466,6 +11746,7 @@ end
             Visible = true;
             Parent = ScreenGui;
         })
+        Library.ToggleUI = ToggleUIOuter
     
         local ToggleUIInner = Library:Create("Frame", {
             BackgroundColor3 = Library.MainColor;
@@ -11536,6 +11817,7 @@ end
             Visible = true;
             Parent = ScreenGui;
         })
+        Library.LockUI = LockUIOuter
     
         local LockUIInner = Library:Create("Frame", {
             BackgroundColor3 = Library.MainColor;
@@ -11599,11 +11881,11 @@ end
         end)
     end
 
-    Window:SetBackgroundImage(WindowInfo.BackgroundImage or "")
-    if WindowInfo.AutoShow then task.spawn(Library.Toggle) end
-
     Window.Holder = Outer
     Library.Window = Window
+
+    Window:SetBackgroundImage(WindowInfo.BackgroundImage or Library.BackgroundImage or "")
+    if WindowInfo.AutoShow then task.spawn(Library.Toggle) end
 
     return Window
 end

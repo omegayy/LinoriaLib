@@ -50,6 +50,10 @@ Library.ShowToggleFrameInKeybinds = true -- Make toggle keybinds work inside the
 Library.ShowCustomCursor = true -- Toggles the Linoria cursor globaly (Default value = true)
 Library.NotifySide = "Left" -- Changes the side of the notifications globaly (Left, Right) (Default value = Left)
 
+-- Apply the saved theme before the window exists, so the first paint matches it.
+ThemeManager:SetLibrary(Library)
+ThemeManager:SetFolder("MyScriptHub")
+
 local Window = Library:CreateWindow({
 	-- Set Center to true if you want the menu to appear in the center
 	-- Set AutoShow to true if you want the menu to appear when it is created
@@ -977,8 +981,7 @@ end)
 -- SaveManager (Allows you to have a configuration system)
 -- ThemeManager (Allows you to have a menu theme system)
 
--- Hand the library over to our managers
-ThemeManager:SetLibrary(Library)
+-- ThemeManager was handed the library and its folder before the window was created.
 SaveManager:SetLibrary(Library)
 
 -- Ignore keys that are used by ThemeManager.
@@ -992,7 +995,6 @@ SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
 -- use case for doing it this way:
 -- a script hub could have themes in a global folder
 -- and game configs in a separate folder per game
-ThemeManager:SetFolder("MyScriptHub")
 SaveManager:SetFolder("MyScriptHub/specific-game")
 SaveManager:SetSubFolder("specific-place") -- if the game has multiple places inside of it (for example: DOORS) 
 					   -- you can use this to save configs for those places separately

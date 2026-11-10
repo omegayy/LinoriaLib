@@ -135,7 +135,7 @@ local SaveManager = {} do
         self:SetIgnoreIndexes({
             "BackgroundColor", "MainColor", "AccentColor", "OutlineColor", "FontColor", -- themes
             "ThemeManager_ThemeList", 'ThemeManager_CustomThemeList', 'ThemeManager_CustomThemeName', -- themes
-            "VideoLink",
+            "VideoLink", "BackgroundImage", "BackgroundImageTransparency",
         })
     end
 
@@ -254,6 +254,17 @@ local SaveManager = {} do
             data.popouts = self.Library.PopoutLayout
         end
 
+        --// Window, keybind menu, watermark, and the mobile buttons \\--
+        if type(self.Library.GetHudLayout) == "function" then
+            local ok, layout = pcall(function()
+                return self.Library:GetHudLayout()
+            end)
+
+            if ok and typeof(layout) == "table" then
+                data.ui = layout
+            end
+        end
+
         local success, encoded = pcall(HttpService.JSONEncode, HttpService, data)
         if not success then
             return false, 'failed to encode data'
@@ -302,6 +313,12 @@ local SaveManager = {} do
                 if type(self.Library.ApplyPopoutLayouts) == "function" then
                     self.Library:ApplyPopoutLayouts()
                 end
+            end)
+        end
+
+        if typeof(decoded.ui) == "table" and type(self.Library.ApplyHudLayout) == "function" then
+            pcall(function()
+                self.Library:ApplyHudLayout(decoded.ui)
             end)
         end
 

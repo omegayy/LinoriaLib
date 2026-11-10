@@ -48,7 +48,7 @@ if typeof(clonefunction) == "function" then
 end
 
 local ThemeManager = {} do
-	local ThemeFields = { "FontColor", "MainColor", "AccentColor", "BackgroundColor", "OutlineColor", "VideoLink" }
+	local ThemeFields = { "FontColor", "MainColor", "AccentColor", "BackgroundColor", "OutlineColor", "VideoLink", "BackgroundImageTransparency", "BackgroundImage" }
 	ThemeManager.Folder = "LinoriaLibSettings"
 	-- if not isfolder(ThemeManager.Folder) then makefolder(ThemeManager.Folder) end
 
@@ -101,9 +101,33 @@ local ThemeManager = {} do
 		videoInstance:Play();
 	end
 
+	local function ApplyBackgroundImage(image)
+		local Library = ThemeManager.Library
+		if not Library then
+			return
+		end
+
+		if typeof(image) ~= "string" then
+			image = ""
+		end
+
+		Library.BackgroundImage = image
+
+		if type(Library.SetBackgroundImage) == "function" then
+			Library:SetBackgroundImage(image)
+		elseif typeof(Library.Window) == "table" and type(Library.Window.SetBackgroundImage) == "function" then
+			Library.Window:SetBackgroundImage(image)
+		end
+	end
+
 	function ThemeManager:SetLibrary(library)
 		self.Library = library
 		library.ThemeManager = self
+
+		-- Folder was chosen first. Apply now that the library exists.
+		if self._FolderReady then
+			self:LoadDefault()
+		end
 	end
 
 	--// Folders \\--
@@ -137,9 +161,47 @@ local ThemeManager = {} do
 		task.wait(0.1)
 	end
 
+	function ThemeManager:GetDefaultThemeName()
+		local theme = "Default"
+		local builtIn = true
+
+		local content
+		if typeof(isfile) == "function" and typeof(readfile) == "function" then
+			local path = self.Folder .. "/themes/default.txt"
+			local existsOk, exists = pcall(isfile, path)
+			if existsOk and exists then
+				local readOk, text = pcall(readfile, path)
+				if readOk and typeof(text) == "string" then
+					content = text:match("^%s*(.-)%s*$")
+				end
+			end
+		end
+
+		if content and content ~= "" then
+			if self.BuiltInThemes[content] then
+				theme = content
+				builtIn = true
+			elseif self:GetCustomTheme(content) then
+				theme = content
+				builtIn = false
+			end
+		elseif self.DefaultTheme and self.BuiltInThemes[self.DefaultTheme] then
+			theme = self.DefaultTheme
+			builtIn = true
+		end
+
+		return theme, builtIn
+	end
+
 	function ThemeManager:SetFolder(folder)
 		self.Folder = folder;
 		self:BuildFolderTree()
+		self._FolderReady = true
+
+		-- Apply as soon as the folder is known, before any window is built.
+		if self.Library then
+			self:LoadDefault()
+		end
 	end
 	
 	--// Apply, Update theme \\--
@@ -155,21 +217,54 @@ local ThemeManager = {} do
 		end
 		
 		local scheme = data[2]
-		for idx, col in next, customThemeData or scheme do
-			if idx == "VideoLink" then
+		local Applied = customThemeData or scheme
+
+		local function TransparencyPercent(value)
+			local Percent = tonumber(value)
+			if Percent == nil then
+				return 75
+			end
+
+			if Percent > 0 and Percent <= 1 then
+				Percent = Percent * 100
+			end
+
+			return math.clamp(Percent, 0, 100)
+		end
+
+		for idx, col in next, Applied do
+			if idx == "VideoLink" or idx == "BackgroundImage" then
 				self.Library[idx] = col
-				
+
 				if self.Library.Options[idx] then
 					self.Library.Options[idx]:SetValue(col)
 				end
-				
-				ApplyBackgroundVideo(col)
-			else
+			elseif idx == "BackgroundImageTransparency" then
+				local Percent = TransparencyPercent(col)
+				self.Library.BackgroundImageTransparency = Percent / 100
+
+				if self.Library.Options[idx] then
+					self.Library.Options[idx]:SetValue(Percent)
+				end
+			elseif idx == "FontColor" or idx == "MainColor" or idx == "AccentColor" or idx == "BackgroundColor" or idx == "OutlineColor" then
 				self.Library[idx] = Color3.fromHex(col)
-				
+
 				if self.Library.Options[idx] then
 					self.Library.Options[idx]:SetValueRGB(Color3.fromHex(col))
 				end
+			end
+		end
+
+		-- Built-in themes have no image or video. Clear the previous one so it does not stick.
+		local Missing = {
+			VideoLink = "";
+			BackgroundImage = "";
+			BackgroundImageTransparency = 75;
+		}
+
+		for field, default in next, Missing do
+			if Applied[field] == nil and self.Library.Options[field] then
+				self.Library.Options[field]:SetValue(default)
 			end
 		end
 
@@ -184,10 +279,19 @@ local ThemeManager = {} do
 
 		for i, field in next, ThemeFields do
 			if self.Library.Options and self.Library.Options[field] then
-				self.Library[field] = self.Library.Options[field].Value
+				local Value = self.Library.Options[field].Value
+
+				if field == "BackgroundImageTransparency" then
+					local Percent = tonumber(Value) or 75
+					self.Library.BackgroundImageTransparency = math.clamp(Percent, 0, 100) / 100
+				else
+					self.Library[field] = Value
+				end
 
 				if field == "VideoLink" then
-					ApplyBackgroundVideo(self.Library.Options[field].Value)
+					ApplyBackgroundVideo(Value)
+				elseif field == "BackgroundImage" then
+					ApplyBackgroundImage(Value)
 				end
 			end
 		end
@@ -214,26 +318,20 @@ local ThemeManager = {} do
 	end
 
 	function ThemeManager:LoadDefault()
-		local theme = 'Default'
-		local content = isfile(self.Folder .. '/themes/default.txt') and readfile(self.Folder .. '/themes/default.txt')
-
-		local isDefault = true
-		if content then
-			if self.BuiltInThemes[content] then
-				theme = content
-			elseif self:GetCustomTheme(content) then
-				theme = content
-				isDefault = false;
-			end
-		elseif self.BuiltInThemes[self.DefaultTheme] then
-			theme = self.DefaultTheme
+		if not self.Library then
+			return
 		end
 
-		if isDefault then
-			self.Library.Options.ThemeManager_ThemeList:SetValue(theme)
-		else
-			self:ApplyTheme(theme)
+		local theme, builtIn = self:GetDefaultThemeName()
+		local list = self.Library.Options and self.Library.Options.ThemeManager_ThemeList
+
+		-- The built-in list applies the theme from its own change handler.
+		if builtIn and list and list.Value ~= theme and type(list.SetValue) == "function" then
+			list:SetValue(theme)
+			return
 		end
+
+		self:ApplyTheme(theme)
 	end
 
 	function ThemeManager:SaveDefault(theme)
@@ -248,10 +346,13 @@ local ThemeManager = {} do
 
 		local theme = {}
 		for _, field in next, ThemeFields do
-			if field == "VideoLink" then
-				theme[field] = self.Library.Options[field].Value
-			else
-				theme[field] = self.Library.Options[field].Value:ToHex()
+			local Option = self.Library.Options[field]
+			if Option then
+				if field == "VideoLink" or field == "BackgroundImage" or field == "BackgroundImageTransparency" then
+					theme[field] = Option.Value
+				else
+					theme[field] = Option.Value:ToHex()
+				end
 			end
 		end
 
@@ -306,7 +407,21 @@ local ThemeManager = {} do
 		groupbox:AddLabel('Accent color'):AddColorPicker('AccentColor', { Default = self.Library.AccentColor });
 		groupbox:AddLabel('Outline color'):AddColorPicker('OutlineColor', { Default = self.Library.OutlineColor });
 		groupbox:AddLabel('Font color')	:AddColorPicker('FontColor', { Default = self.Library.FontColor });
-		groupbox:AddInput('VideoLink', { Text = '.webm Video Background (Link)', Default = self.Library.VideoLink });
+		groupbox:AddInput('VideoLink', { Text = '.webm Video Background (Link)', Default = self.Library.VideoLink, Finished = true });
+		groupbox:AddInput('BackgroundImage', {
+			Text = 'Background image (url, file, or asset id)';
+			Default = self.Library.BackgroundImage or "";
+			Finished = true;
+			Placeholder = 'https://... or folder/image.png';
+		});
+		groupbox:AddSlider('BackgroundImageTransparency', {
+			Text = 'Background image transparency';
+			Default = math.floor((self.Library.BackgroundImageTransparency or 0.75) * 100 + 0.5);
+			Min = 0;
+			Max = 100;
+			Rounding = 0;
+			Suffix = '%';
+		});
 		
 		local ThemesArray = {}
 		for Name, Theme in next, self.BuiltInThemes do
@@ -317,7 +432,12 @@ local ThemeManager = {} do
 
 		groupbox:AddDivider()
 
-		groupbox:AddDropdown('ThemeManager_ThemeList', { Text = 'Theme list', Values = ThemesArray, Default = 1 })
+		local SavedTheme, SavedIsBuiltIn = self:GetDefaultThemeName()
+		groupbox:AddDropdown('ThemeManager_ThemeList', {
+			Text = 'Theme list';
+			Values = ThemesArray;
+			Default = (SavedIsBuiltIn and SavedTheme) or 1;
+		})
 		groupbox:AddButton('Set as default', function()
 			self:SaveDefault(self.Library.Options.ThemeManager_ThemeList.Value)
 			self.Library:Notify(string.format('Set default theme to %q', self.Library.Options.ThemeManager_ThemeList.Value))
@@ -402,6 +522,9 @@ local ThemeManager = {} do
 		self.Library.Options.AccentColor:OnChanged(UpdateTheme)
 		self.Library.Options.OutlineColor:OnChanged(UpdateTheme)
 		self.Library.Options.FontColor:OnChanged(UpdateTheme)
+		self.Library.Options.VideoLink:OnChanged(UpdateTheme)
+		self.Library.Options.BackgroundImage:OnChanged(UpdateTheme)
+		self.Library.Options.BackgroundImageTransparency:OnChanged(UpdateTheme)
 	end
 
 	function ThemeManager:CreateGroupBox(tab)
