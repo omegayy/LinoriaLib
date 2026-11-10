@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-10-18b";
+    Version = "omgayy-2026-11-10a";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -1466,7 +1466,8 @@ do
 
             Toggled = false;
             Mode = Info.Mode or "Toggle"; -- Always, Toggle, Hold, Press
-            Text = Info.Text; --// used as the key when persisting per-keybind filters (SaveKeybindFilters)
+            Idx = Idx;
+            Text = Info.Text; --// legacy save key; HiddenKeybinds is stored by Idx
             Type = "KeyPicker";
             Callback = Info.Callback or function(Value) end;
             ChangedCallback = Info.ChangedCallback or function(New) end;
@@ -1478,10 +1479,16 @@ do
         --// hidden. KeyPickers are created after Library:LoadKeybindFilters() ran,
         --// so the saved HiddenKeybinds state must be applied here on creation. \\--
         do
-            local Hidden = (Library.KeybindFilters and Library.KeybindFilters.HiddenKeybinds) or nil
+            local SavedHidden = nil
 
-            if type(Hidden) == "table" and Hidden[tostring(Info.Text)] == true then
-                KeyPicker.ShowInKeybinds = false
+            if type(Library.GetSavedKeybindHidden) == "function" then
+                SavedHidden = Library:GetSavedKeybindHidden(Idx, Info.Text)
+            end
+
+            --// nil = nothing saved, keep Info.ShowInKeybinds. true/false is the
+            --// user's last choice and wins over the code default. \\--
+            if SavedHidden ~= nil then
+                KeyPicker.ShowInKeybinds = not SavedHidden
             end
         end
 
@@ -1733,7 +1740,7 @@ do
                 Position = UDim2.new(1, -2, 0.5, 0);
                 Size = UDim2.new(0, 16, 0, 16);
                 Text = "";
-                ZIndex = 113;
+                ZIndex = 130;
                 Parent = KeybindsToggleContainer;
             })
 
@@ -1764,12 +1771,7 @@ do
                 end
 
                 if (Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame()) or Input.UserInputType == Enum.UserInputType.Touch then
-                    KeyPicker:SetShowInKeybinds(not (KeyPicker.ShowInKeybinds == false))
-                    UpdateRowHideButton()
-
-                    if type(Library.RefreshKeybindList) == "function" then
-                        Library:RefreshKeybindList()
-                    end
+                    KeyPicker:SetShowInKeybinds(KeyPicker.ShowInKeybinds == false)
 
                     if type(Library.SaveKeybindFilters) == "function" then
                         Library:SaveKeybindFilters()
@@ -2015,22 +2017,41 @@ do
                 end
             end
 
+            KeyPicker.UpdateShowBox = UpdateShowBox
+
             UpdateShowBox()
 
-            ShowBox.InputBegan:Connect(function(Input)
-                if Input.UserInputType == Enum.UserInputType.MouseButton1 then
-                    KeyPicker:SetShowInKeybinds(not (KeyPicker.ShowInKeybinds ~= false))
-                    UpdateShowBox()
+            --// The box frame sits on top of the button and swallows the click,
+            --// and the label is not clickable, so the row never toggled.
+            --// One transparent button covers the whole row. \\--
+            ShowBox.Active = false
+            ShowBoxInner.Active = false
 
-                    if type(Library.RefreshKeybindList) == "function" then
-                        Library:RefreshKeybindList()
-                    end
+            local ShowHit = Library:Create("TextButton", {
+                AutoButtonColor = false;
+                BackgroundTransparency = 1;
+                Size = UDim2.fromScale(1, 1);
+                Text = "";
+                ZIndex = 20;
+                Parent = ShowInner;
+            })
 
-                    if type(Library.SaveKeybindFilters) == "function" then
-                        Library:SaveKeybindFilters()
-                    end
+            ShowHit.MouseButton1Click:Connect(function()
+                if Library.Unloaded then
+                    return
+                end
+
+                KeyPicker:SetShowInKeybinds(not (KeyPicker.ShowInKeybinds ~= false))
+
+                if type(Library.SaveKeybindFilters) == "function" then
+                    Library:SaveKeybindFilters()
                 end
             end)
+
+            --// Keep the row inside the menu. With only one or two modes the
+            --// row used to hang past the frame, so the click counted as
+            --// "outside" and closed the menu instead of toggling. \\--
+            ModeSelectOuter.Size = UDim2.fromOffset(156, ShowInner.Position.Y.Offset + ShowInner.Size.Y.Offset)
         end
 
         function KeyPicker:Display(Text)
@@ -2184,6 +2205,14 @@ do
         --// Toggle whether this keybind appears in the keybind menu
         function KeyPicker:SetShowInKeybinds(Value)
             KeyPicker.ShowInKeybinds = Value ~= false
+
+            if type(KeyPicker.UpdateHideButton) == "function" then
+                KeyPicker.UpdateHideButton()
+            end
+
+            if type(KeyPicker.UpdateShowBox) == "function" then
+                KeyPicker.UpdateShowBox()
+            end
 
             if type(Library.UpdateKeybindFrameSize) == "function" then
                 Library:UpdateKeybindFrameSize()
@@ -2472,10 +2501,10 @@ do
 
             if Input.UserInputType == Enum.UserInputType.MouseButton1 then
                 local AbsPos, AbsSize = ModeSelectOuter.AbsolutePosition, ModeSelectOuter.AbsoluteSize
+                local OverMenu = Mouse.X >= AbsPos.X and Mouse.X <= AbsPos.X + AbsSize.X
+                    and Mouse.Y >= (AbsPos.Y - 20 - 1) and Mouse.Y <= AbsPos.Y + AbsSize.Y
 
-                if Mouse.X < AbsPos.X or Mouse.X > AbsPos.X + AbsSize.X
-                    or Mouse.Y < (AbsPos.Y - 20 - 1) or Mouse.Y > AbsPos.Y + AbsSize.Y then
-
+                if not OverMenu then
                     KeyPicker:SetModePickerVisibility(false)
                 end
             end
@@ -8348,53 +8377,35 @@ do
         })
 
         local Levels = { 0, 0.25, 0.5, 0.75 }
-        local LevelIdx = 1
 
         local function UpdateTransRow()
-            TransRow.Text = string.format("Transparency: %d%%", math.floor(Levels[LevelIdx] * 100 + 0.5))
+            local Value = Library.KeybindTransparency or 0
+            TransRow.Text = string.format("Transparency: %d%%", math.floor(Value * 100 + 0.5))
         end
 
-        TransRow.MouseButton1Click:Connect(function()
-            LevelIdx = (LevelIdx % #Levels) + 1
-            local Value = Levels[LevelIdx]
-            Library.KeybindTransparency = Value
-
-            if Library.KeybindFrame then
-                Library.KeybindFrame.BackgroundTransparency = Value
-            end
-            if Library.KeybindInner then
-                Library.KeybindInner.BackgroundTransparency = Value
-            end
-
-            UpdateTransRow()
-
-            if type(Library.SaveKeybindFilters) == "function" then
-                Library:SaveKeybindFilters()
-            end
-        end)
-
-        UpdateTransRow()
-
-        --// Re-align the cycle index with the loaded transparency value so the
-        --// label shows the real state after Library:LoadKeybindFilters().
-        --// Values from the settings-wheel slider can sit between the cycle
-        --// steps, so snap to the nearest level instead of exact matches. \\--
-        table.insert(KeybindSettingsRefreshers, function()
-            local Value = Library.KeybindTransparency or 0
-            local BestIdx, BestDist = 1, math.huge
-
-            for Idx, Level in next, Levels do
-                local Dist = math.abs(Level - Value)
-
-                if Dist < BestDist then
-                    BestIdx, BestDist = Idx, Dist
+        local function NextTransparency(Current)
+            for _, Level in ipairs(Levels) do
+                if Level > Current + 0.001 then
+                    return Level
                 end
             end
 
-            LevelIdx = BestIdx
+            return Levels[1]
+        end
 
-            UpdateTransRow()
+        TransRow.MouseButton1Click:Connect(function()
+            if Library.Unloaded then
+                return
+            end
+
+            if type(Library.SetKeybindTransparency) == "function" then
+                Library:SetKeybindTransparency(NextTransparency(Library.KeybindTransparency or 0))
+            end
         end)
+
+        table.insert(KeybindSettingsRefreshers, UpdateTransRow)
+
+        UpdateTransRow()
     end
 
     --// Re-renders the keybind settings popup from the CURRENT
@@ -8404,6 +8415,43 @@ do
             if type(Func) == "function" then
                 pcall(Func)
             end
+        end
+    end
+
+    --// One writer for keybind-menu transparency so the popup label, the frame,
+    --// and the options slider all show the same value. \\--
+    function Library:SetKeybindTransparency(Value, SkipSave)
+        Value = tonumber(Value)
+
+        if Value == nil then
+            return
+        end
+
+        Value = math.clamp(Value, 0, 1)
+        Library.KeybindTransparency = Value
+
+        if Library.KeybindFrame then
+            Library.KeybindFrame.BackgroundTransparency = Value
+        end
+
+        if Library.KeybindInner then
+            Library.KeybindInner.BackgroundTransparency = Value
+        end
+
+        if type(Library.RefreshKeybindSettingsUI) == "function" then
+            Library:RefreshKeybindSettingsUI()
+        end
+
+        local Slider = Options and Options.Options_KeybindTransparency
+        local Percent = math.floor(Value * 100 + 0.5)
+
+        if type(Slider) == "table" and Slider.Value ~= Percent and type(Slider.Display) == "function" then
+            Slider.Value = Percent
+            Slider:Display()
+        end
+
+        if SkipSave ~= true and type(Library.SaveKeybindFilters) == "function" then
+            Library:SaveKeybindFilters()
         end
     end
 
@@ -8421,6 +8469,10 @@ do
     local function SetKeybindSettingsOpen(Open)
         KeybindSettingsOpen = Open
         SettingsPopup.Visible = Open
+
+        if Open and type(Library.RefreshKeybindSettingsUI) == "function" then
+            Library:RefreshKeybindSettingsUI()
+        end
     end
 
     SettingsButton.MouseButton1Click:Connect(function()
@@ -8531,6 +8583,44 @@ do
         return Library:GetLibrarySettingsFolder() .. "/keybindfilters.json"
     end
 
+    --// true/false if this keybind was saved, nil if this file has no opinion.
+    --// Flag name wins. Display text is only used for older saves, and only
+    --// when that text belongs to a single keybind. \\--
+    function Library:GetSavedKeybindHidden(Idx, Text)
+        local Hidden = Library.KeybindFilters and Library.KeybindFilters.HiddenKeybinds
+
+        if type(Hidden) ~= "table" then
+            return nil
+        end
+
+        if Idx ~= nil then
+            local ByIdx = Hidden[tostring(Idx)]
+
+            if type(ByIdx) == "boolean" then
+                return ByIdx
+            end
+        end
+
+        if type(Text) ~= "string" or Text == "" or type(Hidden[Text]) ~= "boolean" then
+            return nil
+        end
+
+        local SharesText = false
+
+        for OtherIdx, Option in next, Options do
+            if type(Option) == "table" and Option.Type == "KeyPicker" and Option.Text == Text and tostring(OtherIdx) ~= tostring(Idx) then
+                SharesText = true
+                break
+            end
+        end
+
+        if SharesText then
+            return nil
+        end
+
+        return Hidden[Text]
+    end
+
     function Library:SaveKeybindFilters()
         if typeof(writefile) ~= "function" then
             return
@@ -8538,17 +8628,18 @@ do
 
         Library.KeybindFilters = Library.KeybindFilters or {}
 
-        --// Persist per-keybind visibility (ShowInKeybinds) \\--
-        Library.KeybindFilters.HiddenKeybinds = Library.KeybindFilters.HiddenKeybinds or {}
+        --// Persist per-keybind visibility by flag name. Display text is not
+        --// unique, so two keybinds labeled the same used to overwrite each
+        --// other and the hidden one never came back. \\--
+        local Hidden = {}
 
-        for _, Option in next, Options do
-            if type(Option) == "table" and Option.Type == "KeyPicker" then
-                local Key = Option.Text
-                if type(Key) == "string" and Key ~= "" then
-                    Library.KeybindFilters.HiddenKeybinds[Key] = (Option.ShowInKeybinds == false)
-                end
+        for Index, Option in next, Options do
+            if type(Option) == "table" and Option.Type == "KeyPicker" and Index ~= nil then
+                Hidden[tostring(Index)] = Option.ShowInKeybinds == false
             end
         end
+
+        Library.KeybindFilters.HiddenKeybinds = Hidden
 
         --// Persist transparency settings \\--
         Library.KeybindFilters.KeybindTransparency = Library.KeybindTransparency
@@ -8614,38 +8705,29 @@ do
             }
 
             --// Apply per-keybind visibility \\--
-            for _, Option in next, Options do
+            for Index, Option in next, Options do
                 if type(Option) == "table" and Option.Type == "KeyPicker" then
-                    local Key = Option.Text
-                    if type(Key) == "string" and Key ~= "" and Library.KeybindFilters.HiddenKeybinds[Key] == true then
-                        Option.ShowInKeybinds = false
+                    local SavedHidden = Library:GetSavedKeybindHidden(Index, Option.Text)
+
+                    if SavedHidden ~= nil then
+                        Option.ShowInKeybinds = not SavedHidden
                     end
 
                     if type(Option.UpdateHideButton) == "function" then
                         pcall(Option.UpdateHideButton)
                     end
+
+                    if type(Option.UpdateShowBox) == "function" then
+                        pcall(Option.UpdateShowBox)
+                    end
                 end
             end
 
             --// Apply transparency \\--
-            Library.KeybindTransparency = Library.KeybindFilters.KeybindTransparency or 0
             Library.PopoutTransparency = Library.KeybindFilters.PopoutTransparency or 0
 
-            pcall(function()
-                if Library.KeybindFrame then
-                    Library.KeybindFrame.BackgroundTransparency = Library.KeybindTransparency
-                end
-                if Library.KeybindInner then
-                    Library.KeybindInner.BackgroundTransparency = Library.KeybindTransparency
-                end
-            end)
-
-            --// Re-render the settings popup (filter checkboxes + transparency
-            --// label) so it displays the loaded values instead of the defaults \\--
-            if type(Library.RefreshKeybindSettingsUI) == "function" then
-                pcall(function()
-                    Library:RefreshKeybindSettingsUI()
-                end)
+            if type(Library.SetKeybindTransparency) == "function" then
+                Library:SetKeybindTransparency(Library.KeybindFilters.KeybindTransparency or 0, true)
             end
 
             Library:RefreshKeybindList()
@@ -9760,17 +9842,8 @@ function Library:CreateWindow(...)
             Default = math.floor((Library.KeybindTransparency or 0) * 100 + 0.5);
             Min = 0; Max = 100; Rounding = 0; Suffix = "%";
         }):OnChanged(function(Value)
-            Library.KeybindTransparency = Value / 100
-            pcall(function()
-                if Library.KeybindFrame then
-                    Library.KeybindFrame.BackgroundTransparency = Library.KeybindTransparency
-                end
-                if Library.KeybindInner then
-                    Library.KeybindInner.BackgroundTransparency = Library.KeybindTransparency
-                end
-            end)
-            if type(Library.SaveKeybindFilters) == "function" then
-                Library:SaveKeybindFilters()
+            if type(Library.SetKeybindTransparency) == "function" then
+                Library:SetKeybindTransparency(Value / 100)
             end
         end)
 
