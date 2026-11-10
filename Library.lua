@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-11-10o";
+    Version = "omgayy-2026-11-10p";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -9442,14 +9442,7 @@ do
         Library.KeybindFilters.WatermarkVisible = Library.WatermarkVisible == true
         Library.KeybindFilters.WatermarkFormat = type(Library.WatermarkFormat) == "string" and Library.WatermarkFormat or ""
 
-        local FavoriteList = {}
-        for FavKey, FavOn in next, Library.FavoriteKeys or {} do
-            if FavOn and type(FavKey) == "string" then
-                table.insert(FavoriteList, FavKey)
-            end
-        end
-        table.sort(FavoriteList)
-        Library.KeybindFilters.Favorites = FavoriteList
+        Library.KeybindFilters.Favorites = Library:GetFavoriteList()
 
         local Ok, Encoded = pcall(function()
             return FilterHttp:JSONEncode(Library.KeybindFilters or {})
@@ -9541,10 +9534,12 @@ do
             }
 
             Library.FavoriteKeys = {}
+            Library.FavoriteOrder = {}
             if typeof(Data.Favorites) == "table" then
                 for _, FavKey in ipairs(Data.Favorites) do
-                    if type(FavKey) == "string" and string.find(FavKey, "/", 1, true) then
+                    if type(FavKey) == "string" and string.find(FavKey, "/", 1, true) and not Library.FavoriteKeys[FavKey] then
                         Library.FavoriteKeys[FavKey] = true
+                        Library.FavoriteOrder[#Library.FavoriteOrder + 1] = FavKey
                     end
                 end
             end
@@ -13461,36 +13456,149 @@ do
         end)
     end
 
-    function Library:GetFavoriteList()
-        local List = {}
+    function Library:FavoriteIndex(Key)
+        if type(Key) ~= "string" then
+            return nil
+        end
 
-        for Key, On in next, Library.FavoriteKeys or {} do
-            if On == true and type(Key) == "string" then
+        for Index, Existing in ipairs(Library.FavoriteOrder or {}) do
+            if Existing == Key then
+                return Index
+            end
+        end
+
+        return nil
+    end
+
+    function Library:RememberFavoriteOrder(Key)
+        if type(Key) ~= "string" or Key == "" or Library:FavoriteIndex(Key) then
+            return
+        end
+
+        Library.FavoriteOrder = Library.FavoriteOrder or {}
+        Library.FavoriteOrder[#Library.FavoriteOrder + 1] = Key
+    end
+
+    function Library:ForgetFavoriteOrder(Key)
+        local Order = Library.FavoriteOrder
+        if type(Order) ~= "table" or type(Key) ~= "string" then
+            return
+        end
+
+        for Index = #Order, 1, -1 do
+            if Order[Index] == Key then
+                table.remove(Order, Index)
+            end
+        end
+    end
+
+    function Library:ApplyFavoriteLayoutOrder(Rec)
+        if typeof(Rec) ~= "table" then
+            return
+        end
+
+        local Index = Library:FavoriteIndex(Rec._FavKey) or 1
+
+        for _, Node in next, Rec._FavNodes or {} do
+            if typeof(Node) == "Instance" and Node:IsA("GuiObject") then
+                Node.LayoutOrder = Index
+            end
+        end
+    end
+
+    function Library:SyncFavoriteOrderFromPanel()
+        local Panel = Library.FavoritesPanel
+        local Container = Panel and (Panel.Container or Panel.Content)
+        if typeof(Container) ~= "Instance" then
+            return
+        end
+
+        local Rows = {}
+        for _, Child in next, Container:GetChildren() do
+            if Child:IsA("GuiObject") and Child ~= Library.FavoritesHint and Child.Visible then
+                Rows[#Rows + 1] = Child
+            end
+        end
+
+        table.sort(Rows, function(A, B)
+            if A.LayoutOrder ~= B.LayoutOrder then
+                return A.LayoutOrder < B.LayoutOrder
+            end
+            return A.AbsolutePosition.Y < B.AbsolutePosition.Y
+        end)
+
+        local Seen = {}
+        for _, Key in ipairs(Library.FavoriteOrder or {}) do
+            Seen[Key] = true
+        end
+
+        for _, Row in ipairs(Rows) do
+            for Key, Rec in next, Library.FavoriteRecords or {} do
+                if not Seen[Key] and typeof(Rec) == "table" and Rec._Favorited and type(Rec._FavNodes) == "table" then
+                    for _, Node in next, Rec._FavNodes do
+                        if Node == Row then
+                            Library:RememberFavoriteOrder(Key)
+                            Seen[Key] = true
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    function Library:GetFavoriteList()
+        Library:SyncFavoriteOrderFromPanel()
+
+        local List = {}
+        local Seen = {}
+
+        for _, Key in ipairs(Library.FavoriteOrder or {}) do
+            if Library.FavoriteKeys and Library.FavoriteKeys[Key] == true and not Seen[Key] then
+                Seen[Key] = true
                 List[#List + 1] = Key
             end
         end
 
-        table.sort(List)
+        -- Keys starred before an order was stored. Keep them after the
+        -- ones whose order we already know, without sorting the known ones.
+        local Rest = {}
+        for Key, On in next, Library.FavoriteKeys or {} do
+            if On == true and type(Key) == "string" and not Seen[Key] then
+                Rest[#Rest + 1] = Key
+            end
+        end
+
+        table.sort(Rest)
+        for _, Key in ipairs(Rest) do
+            List[#List + 1] = Key
+        end
+
         return List
     end
 
     function Library:ApplyFavoriteList(List)
         local Wanted = {}
+        local Order = {}
 
         if type(List) == "table" then
-            for _, Key in next, List do
-                if type(Key) == "string" and string.find(Key, "/", 1, true) then
+            for _, Key in ipairs(List) do
+                if type(Key) == "string" and string.find(Key, "/", 1, true) and not Wanted[Key] then
                     Wanted[Key] = true
+                    Order[#Order + 1] = Key
                 end
             end
         end
 
         Library.FavoriteKeys = Wanted
+        Library.FavoriteOrder = Order
 
         for Key, Rec in next, Library.FavoriteRecords or {} do
             local On = Wanted[Key] == true
             if typeof(Rec) == "table" and Rec._Favorited ~= On then
                 Library:SetElementFavorite(Rec, On)
+            elseif On then
+                Library:ApplyFavoriteLayoutOrder(Rec)
             end
         end
     end
@@ -13510,11 +13618,17 @@ do
         Library.FavoriteKeys = Library.FavoriteKeys or {}
         if type(Rec._FavKey) == "string" and Rec._FavKey ~= "" then
             Library.FavoriteKeys[Rec._FavKey] = On or nil
+            if On then
+                Library:RememberFavoriteOrder(Rec._FavKey)
+            else
+                Library:ForgetFavoriteOrder(Rec._FavKey)
+            end
         end
 
         if On then
             Library:ShowFavorites()
             Library:MirrorFavoriteRecord(Rec)
+            Library:ApplyFavoriteLayoutOrder(Rec)
 
             for _, Node in next, Rec._FavNodes or {} do
                 if typeof(Node) == "Instance" then
