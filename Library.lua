@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-11-10l";
+    Version = "omgayy-2026-11-10m";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -1666,7 +1666,38 @@ function Library:GetDarkerColor(Color)
 end
 Library.AccentColorDark = Library:GetDarkerColor(Library.AccentColor)
 
+function Library:IsInPopout(Instance)
+    local Current = Instance
+
+    while typeof(Current) == "Instance" and not Current:IsA("ScreenGui") do
+        if Current:IsA("GuiObject") and Current:GetAttribute("LinoriaPopout") then
+            return true
+        end
+
+        Current = Current.Parent
+    end
+
+    return false
+end
+
 function Library:AddToRegistry(Instance, Properties, IsHud)
+    -- The theme background color is the main window backdrop. Popouts keep
+    -- the main UI color so that picker does not recolor them.
+    if type(Properties) == "table" and Properties.BackgroundColor3 == "BackgroundColor" and Library:IsInPopout(Instance) then
+        local Copy = {}
+
+        for Key, Value in next, Properties do
+            Copy[Key] = Value
+        end
+
+        Copy.BackgroundColor3 = "MainColor"
+        Properties = Copy
+
+        if Instance:IsA("GuiObject") then
+            Instance.BackgroundColor3 = Library.MainColor
+        end
+    end
+
     local Idx = #Library.Registry + 1
     local Data = {
         Instance = Instance;
@@ -7747,7 +7778,7 @@ do
             end
 
             Library:Create("Frame", {
-                BackgroundColor3 = Library.BackgroundColor;
+                BackgroundColor3 = Library:IsInPopout(Parent) and Library.MainColor or Library.BackgroundColor;
                 BorderSizePixel = 0;
                 AnchorPoint = Vector2.new(0.5, 0.5);
                 Position = UDim2.fromScale(0.5, 0.5);
@@ -7844,8 +7875,10 @@ do
             Parent = ScreenGui;
         })
 
+        Outer:SetAttribute("LinoriaPopout", true)
+
         local Inner = Library:Create("Frame", {
-            BackgroundColor3 = Library.BackgroundColor;
+            BackgroundColor3 = Library.MainColor;
             BorderColor3 = Library.OutlineColor;
             BorderMode = Enum.BorderMode.Inset;
             Size = UDim2.fromScale(1, 1);
@@ -7854,7 +7887,7 @@ do
         })
 
         Library:AddToRegistry(Inner, {
-            BackgroundColor3 = "BackgroundColor";
+            BackgroundColor3 = "MainColor";
             BorderColor3 = "OutlineColor";
         })
 
@@ -8017,7 +8050,7 @@ do
         SettingsOuter:SetAttribute("LinoriaSolid", true)
 
         local SettingsInner = Library:Create("Frame", {
-            BackgroundColor3 = Library.BackgroundColor;
+            BackgroundColor3 = Library.MainColor;
             BorderColor3 = Library.OutlineColor;
             BorderMode = Enum.BorderMode.Inset;
             Size = UDim2.fromScale(1, 1);
@@ -8026,7 +8059,7 @@ do
         })
 
         Library:AddToRegistry(SettingsInner, {
-            BackgroundColor3 = "BackgroundColor";
+            BackgroundColor3 = "MainColor";
             BorderColor3 = "OutlineColor";
         })
 
@@ -8151,7 +8184,7 @@ do
             })
 
             local TabList = Library:Create("Frame", {
-                BackgroundColor3 = Library.BackgroundColor;
+                BackgroundColor3 = Library.MainColor;
                 BorderColor3 = Library.OutlineColor;
                 BorderMode = Enum.BorderMode.Inset;
                 Position = UDim2.new(0, 0, 1, 2);
@@ -8162,7 +8195,7 @@ do
             })
 
             Library:AddToRegistry(TabList, {
-                BackgroundColor3 = "BackgroundColor";
+                BackgroundColor3 = "MainColor";
                 BorderColor3 = "OutlineColor";
             })
 
@@ -9360,6 +9393,8 @@ do
         Library.KeybindFilters.KeybindTransparency = Library.KeybindTransparency
         Library.KeybindFilters.PopoutTransparency = Library.PopoutTransparency
         Library.KeybindFilters.WatermarkTransparency = Library.WatermarkTransparency
+        Library.KeybindFilters.WatermarkVisible = Library.WatermarkVisible == true
+        Library.KeybindFilters.WatermarkFormat = type(Library.WatermarkFormat) == "string" and Library.WatermarkFormat or ""
 
         local FavoriteList = {}
         for FavKey, FavOn in next, Library.FavoriteKeys or {} do
@@ -9454,6 +9489,8 @@ do
                 KeybindTransparency = (typeof(Data.KeybindTransparency) == "number" and Data.KeybindTransparency) or 0;
                 PopoutTransparency = (typeof(Data.PopoutTransparency) == "number" and Data.PopoutTransparency) or 0;
                 WatermarkTransparency = (typeof(Data.WatermarkTransparency) == "number" and Data.WatermarkTransparency) or 0;
+                WatermarkVisible = Data.WatermarkVisible == true;
+                WatermarkFormat = (typeof(Data.WatermarkFormat) == "string" and Data.WatermarkFormat) or "";
                 Favorites = (typeof(Data.Favorites) == "table" and Data.Favorites) or {};
             }
 
@@ -9488,6 +9525,8 @@ do
             --// Apply transparency \\--
             Library.PopoutTransparency = Library.KeybindFilters.PopoutTransparency or 0
             Library.WatermarkTransparency = Library.KeybindFilters.WatermarkTransparency or 0
+            Library.WatermarkVisible = Library.KeybindFilters.WatermarkVisible == true
+            Library.WatermarkFormat = Library.KeybindFilters.WatermarkFormat or ""
 
             if type(Library.SetKeybindTransparency) == "function" then
                 Library:SetKeybindTransparency(Library.KeybindFilters.KeybindTransparency or 0, true)
@@ -9495,6 +9534,10 @@ do
 
             if type(Library.SetWatermarkTransparency) == "function" then
                 Library:SetWatermarkTransparency(Library.WatermarkTransparency, true)
+            end
+
+            if type(Library.RefreshWatermark) == "function" then
+                Library:RefreshWatermark()
             end
 
             Library:RefreshKeybindList()
@@ -9568,19 +9611,144 @@ do
     Library.WatermarkInner = WatermarkInner
     Library.WatermarkFill = InnerFrame
     Library.WatermarkText = WatermarkLabel
+    Library.WatermarkVisible = Library.WatermarkVisible == true
+    Library.WatermarkFormat = type(Library.WatermarkFormat) == "string" and Library.WatermarkFormat or ""
+    Library._WatermarkBase = ""
     Library:MakeDraggable(Library.Watermark)
 
+    local WatermarkFps = 60
+    local WatermarkFrames = 0
+    local WatermarkFpsAt = os.clock()
+    local WatermarkGameName = "Game"
+
+    task.spawn(function()
+        local Ok, Info = pcall(function()
+            return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
+        end)
+
+        if Ok and type(Info) == "table" and type(Info.Name) == "string" and Info.Name ~= "" then
+            WatermarkGameName = Info.Name
+        end
+    end)
+
+    local function WatermarkPing()
+        local Ok, Value = pcall(function()
+            return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue()
+        end)
+
+        if Ok and type(Value) == "number" then
+            return tostring(math.floor(Value + 0.5))
+        end
+
+        return "0"
+    end
+
+    function Library:FormatWatermark(Text)
+        Text = tostring(Text or "")
+
+        local Tokens = {
+            fps = tostring(WatermarkFps);
+            ping = WatermarkPing();
+            ms = WatermarkPing();
+            time = os.date("%H:%M");
+            player = LocalPlayer and LocalPlayer.Name or "";
+            name = LocalPlayer and LocalPlayer.DisplayName or "";
+            game = WatermarkGameName;
+            place = WatermarkGameName;
+        }
+
+        return (Text:gsub("{(.-)}", function(Key)
+            local Value = Tokens[string.lower(Key)]
+            if Value == nil then
+                return "{" .. Key .. "}"
+            end
+            return Value
+        end))
+    end
+
+    function Library:WatermarkSource()
+        local Format = Library.WatermarkFormat
+
+        if type(Format) == "string" then
+            Format = Format:gsub("^%s+", ""):gsub("%s+$", "")
+            if Format ~= "" and Format ~= "---" then
+                return Format
+            end
+        end
+
+        if type(Library._WatermarkBase) == "string" and Library._WatermarkBase ~= "" then
+            return Library._WatermarkBase
+        end
+
+        local Title = "Linoria"
+        if Library.Window and type(Library.Window.Title) == "string" and Library.Window.Title ~= "" then
+            Title = Library.Window.Title
+        end
+
+        return Title .. " | {fps} fps"
+    end
+
+    function Library:RefreshWatermark()
+        if not Library.Watermark or not Library.WatermarkText then
+            return
+        end
+
+        if Library.WatermarkVisible ~= true then
+            Library.Watermark.Visible = false
+            return
+        end
+
+        local Text = Library:FormatWatermark(Library:WatermarkSource())
+        if Library.WatermarkText.Text ~= Text then
+            local X, Y = Library:GetTextBounds(Text, Library.Font, 14)
+            Library.Watermark.Size = UDim2.new(0, X + 15, 0, (Y * 1.5) + 3)
+            Library.WatermarkText.Text = Text
+        end
+
+        Library.Watermark.Visible = true
+    end
+
     function Library:SetWatermarkVisibility(Bool)
-        Library.Watermark.Visible = Bool
+        Library.WatermarkVisible = Bool and true or false
+        Library:RefreshWatermark()
     end
 
     function Library:SetWatermark(Text)
-        local X, Y = Library:GetTextBounds(Text, Library.Font, 14)
-        Library.Watermark.Size = UDim2.new(0, X + 15, 0, (Y * 1.5) + 3)
-        Library:SetWatermarkVisibility(true)
-
-        Library.WatermarkText.Text = Text
+        Library._WatermarkBase = tostring(Text or "")
+        Library.WatermarkVisible = true
+        Library:RefreshWatermark()
     end
+
+    function Library:SetWatermarkFormat(Text)
+        Text = tostring(Text or "")
+        if Text == "---" then
+            Text = ""
+        end
+
+        Library.WatermarkFormat = Text
+        Library:RefreshWatermark()
+
+        if type(Library.SaveKeybindFilters) == "function" then
+            Library:SaveKeybindFilters()
+        end
+    end
+
+    Library:GiveSignal(RunService.RenderStepped:Connect(function()
+        WatermarkFrames += 1
+        local Now = os.clock()
+
+        if Now - WatermarkFpsAt < 0.5 then
+            return
+        end
+
+        WatermarkFps = math.floor(WatermarkFrames / (Now - WatermarkFpsAt) + 0.5)
+        WatermarkFrames = 0
+        WatermarkFpsAt = Now
+
+        if Library.WatermarkVisible then
+            Library:RefreshWatermark()
+        end
+    end))
 
     function Library:SetWatermarkTransparency(Value, SkipSave)
         Value = tonumber(Value)
@@ -9616,6 +9784,8 @@ do
     if Library.KeybindFilters and typeof(Library.KeybindFilters.WatermarkTransparency) == "number" then
         Library:SetWatermarkTransparency(Library.KeybindFilters.WatermarkTransparency, true)
     end
+
+    Library:RefreshWatermark()
 end
 
 --// Notifications \\--
@@ -10670,8 +10840,6 @@ function Library:CreateWindow(...)
             Panel:AddLabel("Load the ThemeManager addon for theme settings")
         end
 
-        Panel:AddDivider()
-
         -- Config management (only when the SaveManager addon has been loaded)
         local SaveManager = Library.SaveManager or getgenv().SaveManager or getgenv().LinoriaSaveManager
         if typeof(SaveManager) == "table" and type(SaveManager.BuildConfigSection) == "function" then
@@ -10685,9 +10853,7 @@ function Library:CreateWindow(...)
             Panel:AddLabel("Load the SaveManager addon for config settings")
         end
 
-        Panel:AddDivider()
-
-        -- Menu keybind (UI toggle key) â€” lives in the settings wheel now
+        -- Menu keybind (UI toggle key) lives in the settings wheel
         Panel:AddLabel("Menu keybind"):AddKeyPicker("MenuKeybind", { Default = "End", NoUI = true, Text = "Menu keybind" })
         if Options.MenuKeybind then
             Options.MenuKeybind:OnChanged(function()
@@ -10696,30 +10862,6 @@ function Library:CreateWindow(...)
             Library.ToggleKeybind = Options.MenuKeybind
         end
 
-        Panel:AddDivider()
-
-        --// Individual pop-out transparency (this wheel's own background) \\--
-        Panel:AddSlider("Options_PopoutTransparency", {
-            Text = "Popout Transparency";
-            Default = math.floor((Library.PopoutTransparency or 0) * 100 + 0.5);
-            Min = 0; Max = 100; Rounding = 0; Suffix = "%";
-        }):OnChanged(function(Value)
-            Library.PopoutTransparency = Value / 100
-            pcall(function()
-                Panel:SetTransparency(Library.PopoutTransparency)
-            end)
-            if type(Library.SaveKeybindFilters) == "function" then
-                Library:SaveKeybindFilters()
-            end
-            if type(Panel.Save) == "function" then
-                Panel:Save()
-            end
-        end)
-
-        Panel:AddDivider()
-
-        --// Same toggle as the UI Settings tab. If that one already exists,
-        --// keep the two checkboxes on the same value. \\--
         local KeybindMenuToggle = Panel:AddToggle("Options_KeybindMenuOpen", {
             Text = "Open Keybind Menu";
             Default = Library.KeybindFrame and Library.KeybindFrame.Visible or false;
@@ -10756,7 +10898,56 @@ function Library:CreateWindow(...)
             end
         end
 
-        --// Keybind menu transparency \\--
+        local WatermarkDefault = Library.WatermarkFormat
+        if type(WatermarkDefault) ~= "string" or WatermarkDefault == "" then
+            local Title = (Library.Window and Library.Window.Title) or "Linoria"
+            WatermarkDefault = Title .. " | {fps} fps"
+        end
+
+        Panel:AddToggle("Options_ShowWatermark", {
+            Text = "Show Watermark";
+            Default = Library.WatermarkVisible == true;
+            Callback = function(Value)
+                Library.WatermarkVisible = Value and true or false
+                if type(Library.RefreshWatermark) == "function" then
+                    Library:RefreshWatermark()
+                end
+                if type(Library.SaveKeybindFilters) == "function" then
+                    Library:SaveKeybindFilters()
+                end
+            end;
+        })
+
+        Panel:AddInput("Options_WatermarkText", {
+            Text = "Watermark";
+            Default = WatermarkDefault;
+            Finished = false;
+            Placeholder = "Spectre.cc | Universal | {fps} fps";
+            Tooltip = "Tokens: {fps} {ping} {time} {player} {name} {game}";
+            Callback = function(Value)
+                if type(Library.SetWatermarkFormat) == "function" then
+                    Library:SetWatermarkFormat(Value)
+                end
+            end;
+        })
+
+        Panel:AddSlider("Options_PopoutTransparency", {
+            Text = "Popout Transparency";
+            Default = math.floor((Library.PopoutTransparency or 0) * 100 + 0.5);
+            Min = 0; Max = 100; Rounding = 0; Suffix = "%";
+        }):OnChanged(function(Value)
+            Library.PopoutTransparency = Value / 100
+            pcall(function()
+                Panel:SetTransparency(Library.PopoutTransparency)
+            end)
+            if type(Library.SaveKeybindFilters) == "function" then
+                Library:SaveKeybindFilters()
+            end
+            if type(Panel.Save) == "function" then
+                Panel:Save()
+            end
+        end)
+
         Panel:AddSlider("Options_KeybindTransparency", {
             Text = "Keybind Menu Transparency";
             Default = math.floor((Library.KeybindTransparency or 0) * 100 + 0.5);
@@ -10776,8 +10967,6 @@ function Library:CreateWindow(...)
                 Library:SetWatermarkTransparency(Value / 100)
             end
         end)
-
-        Panel:AddDivider()
 
         Panel:AddButton({
             Text = "Unload";

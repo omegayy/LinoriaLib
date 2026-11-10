@@ -135,7 +135,6 @@ local Window = Library:CreateWindow({
 local Tabs = {
 	-- Creates a new tab titled Main
 	Main = Window:AddTab("Main"),
-	["UI Settings"] = Window:AddTab("UI Settings"),
 }
 
 -- Groupbox and Tabbox inherit the same functions
@@ -759,55 +758,13 @@ SecretDepbox:SetupDependencies({
 	{ Options.DepboxDropdown, "ĉ"} -- In the case of dropdowns, it will automatically check if the specified dropdown value is selected
 })
 
--- Library functions
--- Sets the watermark visibility
-Library:SetWatermarkVisibility(true)
-
--- Example of dynamically-updating watermark with common traits (fps and ping)
-local FrameTimer = tick()
-local FrameCounter = 0;
-local FPS = 60;
-local GetPing = (function() return math.floor(game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue()) end)
-local CanDoPing = pcall(function() return GetPing(); end)
-
-local WatermarkConnection = game:GetService("RunService").RenderStepped:Connect(function()
-	FrameCounter += 1;
-
-	if (tick() - FrameTimer) >= 1 then
-		FPS = FrameCounter;
-		FrameTimer = tick();
-		FrameCounter = 0;
-	end;
-
-	if CanDoPing then
-		Library:SetWatermark(("LinoriaLib demo | %d fps | %d ms"):format(
-			math.floor(FPS),
-			GetPing()
-		));
-	else
-		Library:SetWatermark(("LinoriaLib demo | %d fps"):format(
-			math.floor(FPS)
-		));
-	end
-end);
+-- Menu keybind, cursor, keybind list, watermark and unload live in the
+-- window settings wheel. Watermark text accepts {fps} {ping} {time} {player} {game}.
 
 Library:OnUnload(function()
-	WatermarkConnection:Disconnect()
-
 	print("Unloaded!")
 	Library.Unloaded = true
 end)
-
--- UI Settings
-local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu")
-
-MenuGroup:AddToggle("KeybindMenuOpen", { Default = Library.KeybindFrame.Visible, Text = "Open Keybind Menu", Callback = function(value) Library.KeybindFrame.Visible = value end})
-MenuGroup:AddToggle("ShowCustomCursor", {Text = "Custom Cursor", Default = true, Callback = function(Value) Library.ShowCustomCursor = Value end})
-MenuGroup:AddDivider()
-MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", { Default = "RightShift", NoUI = true, Text = "Menu keybind" })
-MenuGroup:AddButton("Unload", function() Library:Unload() end)
-
-Library.ToggleKeybind = Options.MenuKeybind -- Allows you to have a custom keybind for the menu
 
 --// The little pop-out button (the "P" in the top-right of a groupbox title)
 --// turns any groupbox into a floating panel you can put anywhere on screen:
@@ -1039,8 +996,7 @@ SaveManager:SetLibrary(Library)
 -- (we dont want configs to save themes, do we?)
 SaveManager:IgnoreThemeSettings()
 
--- Adds our MenuKeybind to the ignore list
--- (do you want each config to have a different menu key? probably not.)
+-- Menu key, theme and the watermark text should not change per config.
 SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
 
 -- use case for doing it this way:
@@ -1052,10 +1008,8 @@ SaveManager:SetSubFolder("specific-place") -- if the game has multiple places in
 					   -- The path in this script would be: MyScriptHub/specific-game/settings/specific-place
 					   -- [ This is optional ]
 
--- Theme + config managers now live in the settings wheel (gear icon, top right
--- of the window). See Library:OpenOptionsMenu. They no longer need a tab:
--- SaveManager:BuildConfigSection(Tabs["UI Settings"])
--- ThemeManager:ApplyToTab(Tabs["UI Settings"])
+-- Theme + config managers live in the settings wheel (gear icon, top right
+-- of the window). See Library:OpenOptionsMenu.
 
 -- You can use the SaveManager:LoadAutoloadConfig() to load a config
 -- which has been marked to be one that auto loads!
