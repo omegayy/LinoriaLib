@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-11-10k";
+    Version = "omgayy-2026-11-10l";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -1738,6 +1738,16 @@ function Library:UpdateColorsUsingRegistry()
         local Amount = Library[TransKey]
         if type(Amount) ~= "number" then
             return
+        end
+
+        -- Settings popups stay solid. Theme transparency is for the window
+        -- behind them, and a faded settings panel is unreadable.
+        local Solid = Object.Instance
+        while Solid and not Solid:IsA("ScreenGui") do
+            if Solid:IsA("GuiObject") and Solid:GetAttribute("LinoriaSolid") then
+                return
+            end
+            Solid = Solid.Parent
         end
 
         Amount = math.clamp(Amount, 0, 1)
@@ -7758,6 +7768,50 @@ do
         return Button
     end
 
+    -- Puts a settings popup fully outside its window, on the side of the
+    -- screen the window is not occupying, and shifts it up when the lower
+    -- half of the screen would clip it.
+    function Library:PlacePopupBeside(Popup, Host)
+        if typeof(Popup) ~= "Instance" or typeof(Host) ~= "Instance" then
+            return
+        end
+
+        local Gui = Host:FindFirstAncestorOfClass("ScreenGui")
+        local Screen = Gui and Gui.AbsoluteSize or Vector2.new(1280, 720)
+        local HostPos = Host.AbsolutePosition
+        local HostSize = Host.AbsoluteSize
+        local PopSize = Popup.AbsoluteSize
+
+        if PopSize.X < 2 then
+            PopSize = Vector2.new(math.max(Popup.Size.X.Offset, 160), math.max(Popup.Size.Y.Offset, 80))
+        end
+
+        local Gap = 8
+        local OpenLeft = (HostPos.X + HostSize.X * 0.5) > (Screen.X * 0.5)
+        local X = OpenLeft and (HostPos.X - PopSize.X - Gap) or (HostPos.X + HostSize.X + Gap)
+        local Y = HostPos.Y
+
+        if X < 4 then
+            X = HostPos.X + HostSize.X + Gap
+        elseif X + PopSize.X > Screen.X - 4 then
+            X = HostPos.X - PopSize.X - Gap
+        end
+
+        if Y + PopSize.Y > Screen.Y - 4 then
+            Y = math.max(4, Screen.Y - PopSize.Y - 4)
+        end
+
+        if Y < 4 then
+            Y = 4
+        end
+
+        local Parent = Popup.Parent
+        local Origin = (Parent and Parent:IsA("GuiObject")) and Parent.AbsolutePosition or Vector2.zero
+
+        Popup.AnchorPoint = Vector2.zero
+        Popup.Position = UDim2.fromOffset(math.floor(X - Origin.X), math.floor(Y - Origin.Y))
+    end
+
     function Library:CreatePopout(Info)
         Info = Info or {}
 
@@ -7959,6 +8013,8 @@ do
             ZIndex = 210;
             Parent = Inner;
         })
+
+        SettingsOuter:SetAttribute("LinoriaSolid", true)
 
         local SettingsInner = Library:Create("Frame", {
             BackgroundColor3 = Library.BackgroundColor;
@@ -8530,9 +8586,19 @@ do
             Popout:SetVisible(false)
         end)
 
+        local function PlaceSettings()
+            if SettingsOuter.Visible then
+                Library:PlacePopupBeside(SettingsOuter, Outer)
+            end
+        end
+
         SettingsButton.MouseButton1Click:Connect(function()
             SettingsOuter.Visible = not SettingsOuter.Visible
+            PlaceSettings()
         end)
+
+        Outer:GetPropertyChangedSignal("Position"):Connect(PlaceSettings)
+        Outer:GetPropertyChangedSignal("Size"):Connect(PlaceSettings)
 
         -- Dragging
         local Dragging = false
@@ -8667,6 +8733,10 @@ do
 
             local function Apply(Inst)
                 if not Inst:IsA("GuiObject") then
+                    return
+                end
+
+                if Inst == SettingsOuter or Inst:IsDescendantOf(SettingsOuter) then
                     return
                 end
 
@@ -8829,6 +8899,8 @@ do
         ZIndex = 300;
         Parent = KeybindInner;
     })
+
+    SettingsPopup:SetAttribute("LinoriaSolid", true)
 
     Library:AddToRegistry(SettingsPopup, {
         BackgroundColor3 = "BackgroundColor";
@@ -9104,10 +9176,19 @@ do
         KeybindSettingsOpen = Open
         SettingsPopup.Visible = Open
 
-        if Open and type(Library.RefreshKeybindSettingsUI) == "function" then
-            Library:RefreshKeybindSettingsUI()
+        if Open then
+            Library:PlacePopupBeside(SettingsPopup, KeybindOuter)
+            if type(Library.RefreshKeybindSettingsUI) == "function" then
+                Library:RefreshKeybindSettingsUI()
+            end
         end
     end
+
+    KeybindOuter:GetPropertyChangedSignal("Position"):Connect(function()
+        if KeybindSettingsOpen then
+            Library:PlacePopupBeside(SettingsPopup, KeybindOuter)
+        end
+    end)
 
     SettingsButton.MouseButton1Click:Connect(function()
         if Library.Unloaded then
@@ -10548,6 +10629,10 @@ function Library:CreateWindow(...)
 
         if typeof(Library.OptionsPanel) == "table" and not Library.OptionsPanel.Destroyed then
             Library.OptionsPanel:SetVisible(true)
+            local Host = Library.Window and Library.Window.Holder
+            if Host and Library.OptionsPanel.Outer then
+                Library:PlacePopupBeside(Library.OptionsPanel.Outer, Host)
+            end
             return Library.OptionsPanel
         end
 
@@ -10711,6 +10796,11 @@ function Library:CreateWindow(...)
         })
 
         Library:RefreshPopoutLayout(Panel)
+
+        local Host = Library.Window and Library.Window.Holder
+        if Host and Panel.Outer then
+            Library:PlacePopupBeside(Panel.Outer, Host)
+        end
 
         return Panel
     end
