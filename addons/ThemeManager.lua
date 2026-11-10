@@ -301,6 +301,9 @@ local ThemeManager = {} do
 				if field == "BackgroundImageTransparency" then
 					local Percent = tonumber(Value) or 75
 					self.Library.BackgroundImageTransparency = math.clamp(Percent, 0, 100) / 100
+					if type(self.Library.SetBackgroundImage) == "function" then
+						self.Library:SetBackgroundImage(self.Library.BackgroundImage or "")
+					end
 				else
 					self.Library[field] = Value
 				end
@@ -445,7 +448,7 @@ local ThemeManager = {} do
 		groupbox:AddInput('BackgroundImage', {
 			Text = 'Background image (url, file, or asset id)';
 			Default = self.Library.BackgroundImage or "";
-			Finished = true;
+			Finished = false;
 			Placeholder = 'https://... or folder/image.png';
 		});
 		groupbox:AddSlider('BackgroundImageTransparency', {

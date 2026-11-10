@@ -288,6 +288,10 @@ local SaveManager = {} do
             data.popouts = self.Library.PopoutLayout
         end
 
+        if type(self.Library.GetFavoriteList) == "function" then
+            data.favorites = self.Library:GetFavoriteList()
+        end
+
         --// Window, keybind menu, watermark, and the mobile buttons \\--
         if type(self.Library.GetHudLayout) == "function" then
             local ok, layout = pcall(function()
@@ -351,6 +355,12 @@ local SaveManager = {} do
                 if type(self.Library.ApplyPopoutLayouts) == "function" then
                     self.Library:ApplyPopoutLayouts()
                 end
+            end)
+        end
+
+        if typeof(decoded.favorites) == "table" and type(self.Library.ApplyFavoriteList) == "function" then
+            pcall(function()
+                self.Library:ApplyFavoriteList(decoded.favorites)
             end)
         end
 

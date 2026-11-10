@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-11-10j";
+    Version = "omgayy-2026-11-10k";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -675,6 +675,238 @@ function Library:CreateLabel(Properties, IsHud)
     return Library:Create(_Instance, Properties)
 end
 
+local AlignGuides = {}
+
+function Library:HideAlignGuides()
+    for _, Line in next, AlignGuides do
+        if typeof(Line) == "Instance" then
+            Line.Visible = false
+        end
+    end
+end
+
+function Library:GetAlignGuide(Index)
+    local Line = AlignGuides[Index]
+    if typeof(Line) == "Instance" then
+        Line.BackgroundColor3 = Library.AccentColor
+        return Line
+    end
+
+    Line = Instance.new("Frame")
+    Line.Name = "AlignGuide"
+    Line.BorderSizePixel = 0
+    Line.BackgroundColor3 = Library.AccentColor
+    Line.ZIndex = 10000
+    Line.Visible = false
+    Line.Active = false
+    Line.Parent = ScreenGui
+    Library:AddToRegistry(Line, { BackgroundColor3 = "AccentColor" })
+    AlignGuides[Index] = Line
+    return Line
+end
+
+function Library:AlignTargets(Ignore)
+    local List = {}
+
+    local function Add(Frame)
+        if typeof(Frame) ~= "Instance" or Frame == Ignore or not Frame.Visible or not Frame.Parent then
+            return
+        end
+
+        local Size = Frame.AbsoluteSize
+        if Size.X < 2 or Size.Y < 2 then
+            return
+        end
+
+        local Pos = Frame.AbsolutePosition
+        List[#List + 1] = {
+            Left = Pos.X;
+            Top = Pos.Y;
+            Right = Pos.X + Size.X;
+            Bottom = Pos.Y + Size.Y;
+        }
+    end
+
+    if typeof(Library.Window) == "table" then
+        Add(Library.Window.Holder)
+    end
+
+    for _, Popout in next, Library.Popouts or {} do
+        if typeof(Popout) == "table" and not Popout.Destroyed then
+            Add(Popout.Outer)
+        end
+    end
+
+    Add(Library.KeybindFrame)
+    Add(Library.Watermark)
+
+    local Camera = workspace.CurrentCamera
+    local View = (Camera and Camera.ViewportSize) or Vector2.new(1280, 720)
+    List[#List + 1] = {
+        Left = 0;
+        Top = 0;
+        Right = View.X;
+        Bottom = View.Y;
+        Screen = true;
+    }
+
+    return List
+end
+
+function Library:DrawAlignGuides(Vertical, Horizontal)
+    Library:HideAlignGuides()
+
+    local Index = 0
+    if Vertical then
+        Index = Index + 1
+        local Line = Library:GetAlignGuide(Index)
+        Line.Position = UDim2.fromOffset(math.floor(Vertical.X + 0.5), math.floor(Vertical.Y1 + 0.5))
+        Line.Size = UDim2.fromOffset(1, math.max(1, math.floor(Vertical.Y2 - Vertical.Y1 + 0.5)))
+        Line.Visible = true
+    end
+
+    if Horizontal then
+        Index = Index + 1
+        local Line = Library:GetAlignGuide(Index)
+        Line.Position = UDim2.fromOffset(math.floor(Horizontal.X1 + 0.5), math.floor(Horizontal.Y + 0.5))
+        Line.Size = UDim2.fromOffset(math.max(1, math.floor(Horizontal.X2 - Horizontal.X1 + 0.5)), 1)
+        Line.Visible = true
+    end
+end
+
+-- Moving flags say which edges of Rect are allowed to snap (drag moves all
+-- of them, a corner resize only moves the right and bottom).
+function Library:SnapRect(Ignore, Rect, Moving)
+    local Threshold = 8
+    local BestX, BestXDist, GuideX = 0, Threshold + 1, nil
+    local BestY, BestYDist, GuideY = 0, Threshold + 1, nil
+    local Right = Rect.Left + Rect.Width
+    local Bottom = Rect.Top + Rect.Height
+
+    local SourcesX = {}
+    if Moving.Left then
+        SourcesX[#SourcesX + 1] = Rect.Left
+    end
+    if Moving.CenterX then
+        SourcesX[#SourcesX + 1] = Rect.Left + Rect.Width * 0.5
+    end
+    if Moving.Right then
+        SourcesX[#SourcesX + 1] = Right
+    end
+
+    local SourcesY = {}
+    if Moving.Top then
+        SourcesY[#SourcesY + 1] = Rect.Top
+    end
+    if Moving.CenterY then
+        SourcesY[#SourcesY + 1] = Rect.Top + Rect.Height * 0.5
+    end
+    if Moving.Bottom then
+        SourcesY[#SourcesY + 1] = Bottom
+    end
+
+    for _, Other in next, Library:AlignTargets(Ignore) do
+        local TargetsX = { Other.Left, (Other.Left + Other.Right) * 0.5, Other.Right }
+        local TargetsY = { Other.Top, (Other.Top + Other.Bottom) * 0.5, Other.Bottom }
+
+        for _, Src in next, SourcesX do
+            for _, Target in next, TargetsX do
+                local Dist = math.abs(Src - Target)
+                if Dist <= Threshold and Dist < BestXDist then
+                    BestXDist = Dist
+                    BestX = Target - Src
+                    local Y1, Y2
+                    if Other.Screen then
+                        Y1, Y2 = 0, Other.Bottom
+                    else
+                        Y1 = math.min(Rect.Top, Other.Top) - 12
+                        Y2 = math.max(Bottom, Other.Bottom) + 12
+                    end
+                    GuideX = { X = Target, Y1 = Y1, Y2 = Y2 }
+                end
+            end
+        end
+
+        for _, Src in next, SourcesY do
+            for _, Target in next, TargetsY do
+                local Dist = math.abs(Src - Target)
+                if Dist <= Threshold and Dist < BestYDist then
+                    BestYDist = Dist
+                    BestY = Target - Src
+                    local X1, X2
+                    if Other.Screen then
+                        X1, X2 = 0, Other.Right
+                    else
+                        X1 = math.min(Rect.Left, Other.Left) - 12
+                        X2 = math.max(Right, Other.Right) + 12
+                    end
+                    GuideY = { Y = Target, X1 = X1, X2 = X2 }
+                end
+            end
+        end
+    end
+
+    if BestXDist > Threshold then
+        BestX, GuideX = 0, nil
+    end
+    if BestYDist > Threshold then
+        BestY, GuideY = 0, nil
+    end
+
+    local Out = {
+        Left = Rect.Left;
+        Top = Rect.Top;
+        Width = Rect.Width;
+        Height = Rect.Height;
+    }
+
+    if Moving.Left and Moving.Right then
+        Out.Left = Rect.Left + BestX
+    elseif Moving.Right then
+        Out.Width = Rect.Width + BestX
+    elseif Moving.Left then
+        Out.Left = Rect.Left + BestX
+        Out.Width = Rect.Width - BestX
+    end
+
+    if Moving.Top and Moving.Bottom then
+        Out.Top = Rect.Top + BestY
+    elseif Moving.Bottom then
+        Out.Height = Rect.Height + BestY
+    elseif Moving.Top then
+        Out.Top = Rect.Top + BestY
+        Out.Height = Rect.Height - BestY
+    end
+
+    Library:DrawAlignGuides(GuideX, GuideY)
+    return Out
+end
+
+function Library:PlaceFrameRect(Frame, Rect, Resize)
+    if typeof(Frame) ~= "Instance" then
+        return
+    end
+
+    local Width = Rect.Width
+    local Height = Rect.Height
+    if Resize then
+        Width = math.max(1, math.floor(Width + 0.5))
+        Height = math.max(1, math.floor(Height + 0.5))
+        Frame.Size = UDim2.fromOffset(Width, Height)
+    else
+        Width = Frame.AbsoluteSize.X
+        Height = Frame.AbsoluteSize.Y
+    end
+
+    local Anchor = Frame.AnchorPoint
+    Frame.Position = UDim2.fromOffset(
+        math.floor(Rect.Left + Width * Anchor.X + 0.5),
+        math.floor(Rect.Top + Height * Anchor.Y + 0.5)
+    )
+end
+
+local DragSnap = { Left = true, Right = true, CenterX = true, Top = true, Bottom = true, CenterY = true }
+
 function Library:MakeDraggable(Instance, Cutoff, IsMainWindow)
     Instance.Active = true
 
@@ -699,15 +931,19 @@ function Library:MakeDraggable(Instance, Cutoff, IsMainWindow)
                 end
 
                 while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
-                    Instance.Position = UDim2.new(
-                        0,
-                        Mouse.X - ObjPos.X + (Instance.Size.X.Offset * Instance.AnchorPoint.X),
-                        0,
-                        Mouse.Y - ObjPos.Y + (Instance.Size.Y.Offset * Instance.AnchorPoint.Y)
-                    )
+                    local Size = Instance.AbsoluteSize
+                    local Snapped = Library:SnapRect(Instance, {
+                        Left = Mouse.X - ObjPos.X;
+                        Top = Mouse.Y - ObjPos.Y;
+                        Width = Size.X;
+                        Height = Size.Y;
+                    }, DragSnap)
+                    Library:PlaceFrameRect(Instance, Snapped, false)
 
                     RunService.RenderStepped:Wait()
                 end
+
+                Library:HideAlignGuides()
             end
         end)
     else
@@ -727,7 +963,7 @@ function Library:MakeDraggable(Instance, Cutoff, IsMainWindow)
             if not Dragging and Library:MouseIsOverFrame(Instance, Input) and (IsMainWindow == true and (Library.CanDrag == true and Library.Window.Holder.Visible == true) or true) then
                 DraggingInput = Input
                 DraggingStart = Input.Position
-                StartPosition = Instance.Position
+                StartPosition = Instance.AbsolutePosition
 
                 local OffsetPos = Input.Position - DraggingStart
                 if OffsetPos.Y > (Cutoff or 40) then
@@ -746,18 +982,20 @@ function Library:MakeDraggable(Instance, Cutoff, IsMainWindow)
 
             if Input == DraggingInput and Dragging and (IsMainWindow == true and (Library.CanDrag == true and Library.Window.Holder.Visible == true) or true) then
                 local OffsetPos = Input.Position - DraggingStart
-
-                Instance.Position = UDim2.new(
-                    StartPosition.X.Scale,
-                    StartPosition.X.Offset + OffsetPos.X,
-                    StartPosition.Y.Scale,
-                    StartPosition.Y.Offset + OffsetPos.Y
-                )
+                local Size = Instance.AbsoluteSize
+                local Snapped = Library:SnapRect(Instance, {
+                    Left = StartPosition.X + OffsetPos.X;
+                    Top = StartPosition.Y + OffsetPos.Y;
+                    Width = Size.X;
+                    Height = Size.Y;
+                }, DragSnap)
+                Library:PlaceFrameRect(Instance, Snapped, false)
             end
         end)
         InputService.TouchEnded:Connect(function(Input)
             if Input == DraggingInput then 
                 Dragging = false
+                Library:HideAlignGuides()
             end
         end)
     end
@@ -787,15 +1025,19 @@ function Library:MakeDraggableUsingParent(Instance, Parent, Cutoff, IsMainWindow
                 end
 
                 while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
-                    Parent.Position = UDim2.new(
-                        0,
-                        Mouse.X - ObjPos.X + (Parent.Size.X.Offset * Parent.AnchorPoint.X),
-                        0,
-                        Mouse.Y - ObjPos.Y + (Parent.Size.Y.Offset * Parent.AnchorPoint.Y)
-                    )
+                    local Size = Parent.AbsoluteSize
+                    local Snapped = Library:SnapRect(Parent, {
+                        Left = Mouse.X - ObjPos.X;
+                        Top = Mouse.Y - ObjPos.Y;
+                        Width = Size.X;
+                        Height = Size.Y;
+                    }, DragSnap)
+                    Library:PlaceFrameRect(Parent, Snapped, false)
 
                     RunService.RenderStepped:Wait()
                 end
+
+                Library:HideAlignGuides()
             end
         end)
     else  
@@ -857,6 +1099,7 @@ function Library:MakeResizable(Instance, MinSize)
         ResizerImage.BackgroundTransparency = Transparency
         ResizerImageUICorner.Parent = ResizerImage
         OffsetPos = nil
+        Library:HideAlignGuides()
     end
 
     ResizerImage.MouseButton1Down:Connect(function()
@@ -874,8 +1117,21 @@ function Library:MakeResizable(Instance, MinSize)
     ResizerImage.MouseMoved:Connect(function()
         if OffsetPos then		
             local MousePos = Vector2.new(Mouse.X - OffsetPos.X, Mouse.Y - OffsetPos.Y)
-            local FinalSize = Vector2.new(math.clamp(MousePos.X - Instance.AbsolutePosition.X, MinSize.X, math.huge), math.clamp(MousePos.Y - Instance.AbsolutePosition.Y, MinSize.Y, math.huge))
-            Instance.Size = UDim2.fromOffset(FinalSize.X, FinalSize.Y)
+            local Left = Instance.AbsolutePosition.X
+            local Top = Instance.AbsolutePosition.Y
+            local FinalSize = Vector2.new(
+                math.clamp(MousePos.X - Left, MinSize.X, math.huge),
+                math.clamp(MousePos.Y - Top, MinSize.Y, math.huge)
+            )
+            local Snapped = Library:SnapRect(Instance, {
+                Left = Left;
+                Top = Top;
+                Width = FinalSize.X;
+                Height = FinalSize.Y;
+            }, { Right = true, Bottom = true })
+            Snapped.Width = math.max(Snapped.Width, MinSize.X)
+            Snapped.Height = math.max(Snapped.Height, MinSize.Y)
+            Library:PlaceFrameRect(Instance, Snapped, true)
         end
     end)
 
@@ -1487,9 +1743,16 @@ function Library:UpdateColorsUsingRegistry()
         Amount = math.clamp(Amount, 0, 1)
         Object.BaseTransparency = Object.BaseTransparency or {}
 
+        -- The menu fade pushes every background to 1 while it is closed.
+        -- Recording that as the base makes the next open stack a grey veil
+        -- or an extra layer of transparency on top of the theme.
+        local Live = Object.Instance[TransProp]
+        if Library.Toggled == false and type(Live) == "number" and Live >= 0.999 then
+            return
+        end
+
         if Object.BaseTransparency[TransProp] == nil then
-            local Current = Object.Instance[TransProp]
-            Object.BaseTransparency[TransProp] = type(Current) == "number" and Current or 0
+            Object.BaseTransparency[TransProp] = type(Live) == "number" and Live or 0
         end
 
         local Base = Object.BaseTransparency[TransProp]
@@ -2768,7 +3031,7 @@ do
 
         local PickerFrameOuter = Library:Create("Frame", {
             Name = "Color";
-            BackgroundColor3 = Color3.new(1, 1, 1);
+            BackgroundColor3 = Library.BackgroundColor;
             BorderColor3 = Color3.new(0, 0, 0);
             Position = UDim2.fromOffset(DisplayFrame.AbsolutePosition.X, DisplayFrame.AbsolutePosition.Y + 18),
             Size = UDim2.fromOffset(230, Info.Transparency ~= nil and 271 or 253);
@@ -2799,6 +3062,7 @@ do
         })
 
         local SatVibMapOuter = Library:Create("Frame", {
+            BackgroundColor3 = Library.BackgroundColor;
             BorderColor3 = Color3.new(0, 0, 0);
             Position = UDim2.new(0, 4, 0, 25);
             Size = UDim2.new(0, 200, 0, 200);
@@ -2844,6 +3108,7 @@ do
         })
 
         local HueSelectorOuter = Library:Create("Frame", {
+            BackgroundColor3 = Library.BackgroundColor;
             BorderColor3 = Color3.new(0, 0, 0);
             Position = UDim2.new(0, 208, 0, 25);
             Size = UDim2.new(0, 15, 0, 200);
@@ -2869,6 +3134,7 @@ do
         })
 
         local HueBoxOuter = Library:Create("Frame", {
+            BackgroundColor3 = Library.BackgroundColor;
             BorderColor3 = Color3.new(0, 0, 0);
             Position = UDim2.fromOffset(4, 228),
             Size = UDim2.new(0.5, -6, 0, 20),
@@ -2928,6 +3194,7 @@ do
         
         if Info.Transparency ~= nil then 
             TransparencyBoxOuter = Library:Create("Frame", {
+                BackgroundColor3 = Library.BackgroundColor;
                 BorderColor3 = Color3.new(0, 0, 0);
                 Position = UDim2.fromOffset(4, 251);
                 Size = UDim2.new(1, -8, 0, 15);
@@ -3123,7 +3390,14 @@ do
         end
         ColorPicker.ContextMenu = ContextMenu
 
+        Library:AddToRegistry(PickerFrameOuter, { BackgroundColor3 = "BackgroundColor"; })
         Library:AddToRegistry(PickerFrameInner, { BackgroundColor3 = "BackgroundColor"; BorderColor3 = "OutlineColor"; })
+        Library:AddToRegistry(SatVibMapOuter, { BackgroundColor3 = "BackgroundColor"; })
+        Library:AddToRegistry(HueSelectorOuter, { BackgroundColor3 = "BackgroundColor"; })
+        Library:AddToRegistry(HueBoxOuter, { BackgroundColor3 = "BackgroundColor"; })
+        if TransparencyBoxOuter then
+            Library:AddToRegistry(TransparencyBoxOuter, { BackgroundColor3 = "BackgroundColor"; })
+        end
         Library:AddToRegistry(Highlight, { BackgroundColor3 = "AccentColor"; })
         Library:AddToRegistry(SatVibMapInner, { BackgroundColor3 = "BackgroundColor"; BorderColor3 = "OutlineColor"; })
 
@@ -7073,13 +7347,9 @@ do
         if typeof(SM) == "table" and typeof(SM.Folder) == "string" and SM.Folder ~= "" then
             local Folder = SM.Folder
 
-            if typeof(SM.SubFolder) == "string" and SM.SubFolder ~= "" then
-                Folder = Folder .. "/settings/" .. SM.SubFolder
-            else
-                Folder = Folder .. "/settings"
-            end
-
-            return Folder
+            -- UI files (popout layout, keybind filters) stay out of the
+            -- config list, which reads Folder/settings.
+            return Folder .. "/ui"
         end
 
         return "LinoriaLibSettings"
@@ -7150,16 +7420,61 @@ do
         return Contents
     end
 
+    local function LegacySettingsPaths(FileName)
+        local Paths = {}
+        local SM = Library.SaveManager
+
+        if typeof(SM) == "table" and type(SM.Folder) == "string" and SM.Folder ~= "" then
+            if type(SM.SubFolder) == "string" and SM.SubFolder ~= "" then
+                Paths[#Paths + 1] = SM.Folder .. "/settings/" .. SM.SubFolder .. "/" .. FileName
+            end
+
+            Paths[#Paths + 1] = SM.Folder .. "/settings/" .. FileName
+        end
+
+        return Paths
+    end
+
+    local function AdoptLegacy(Contents, OldPath, NewPath)
+        if typeof(Contents) ~= "string" then
+            return nil
+        end
+
+        pcall(function()
+            Library:EnsureSettingsFolder(Library:GetLibrarySettingsFolder())
+            writefile(NewPath, Contents)
+
+            if OldPath and typeof(delfile) == "function" and OldPath ~= NewPath then
+                delfile(OldPath)
+            end
+        end)
+
+        return Contents
+    end
+
     local function TryReadFile()
         --// Prefer this script's own settings file \\--
-        local Contents = ReadFile(GetPopoutSaveFile())
+        local Current = GetPopoutSaveFile()
+        local Contents = ReadFile(Current)
 
         if Contents then
             return Contents
         end
 
+        for _, OldPath in next, LegacySettingsPaths("popouts.json") do
+            Contents = ReadFile(OldPath)
+            if Contents then
+                return AdoptLegacy(Contents, OldPath, Current)
+            end
+        end
+
         --// Fall back to the legacy shared file \\--
-        return ReadFile(LegacyPopoutSaveFile)
+        Contents = ReadFile(LegacyPopoutSaveFile)
+        if Contents then
+            return AdoptLegacy(Contents, nil, Current)
+        end
+
+        return nil
     end
 
     function Library:LoadPopouts()
@@ -8221,7 +8536,7 @@ do
 
         -- Dragging
         local Dragging = false
-        local DragStartMouse, DragStartPosition
+        local DragStartMouse, DragStartAbsolute
 
         TitleBar.InputBegan:Connect(function(Input)
             if Popout.Locked or Library:IsOverDragBlocker(Input) then
@@ -8231,13 +8546,13 @@ do
             if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
                 Dragging = true
                 DragStartMouse = Vector2.new(Input.Position.X, Input.Position.Y)
-                DragStartPosition = Outer.Position
+                DragStartAbsolute = Outer.AbsolutePosition
             end
         end)
 
         -- Resizing
         local Resizing = false
-        local ResizeStartMouse, ResizeStartSize, ResizeStartPosition
+        local ResizeStartMouse, ResizeStartSize, ResizeStartAbsolute
 
         ResizeGrip.InputBegan:Connect(function(Input)
             if not Popout.Resizable then
@@ -8248,7 +8563,7 @@ do
                 Resizing = true
                 ResizeStartMouse = Vector2.new(Input.Position.X, Input.Position.Y)
                 ResizeStartSize = Vector2.new(Outer.AbsoluteSize.X, Outer.AbsoluteSize.Y)
-                ResizeStartPosition = Outer.Position
+                ResizeStartAbsolute = Outer.AbsolutePosition
             end
         end)
 
@@ -8263,27 +8578,27 @@ do
 
             if Dragging then
                 local Delta = Vector2.new(Input.Position.X, Input.Position.Y) - DragStartMouse
-                Outer.Position = UDim2.new(
-                    DragStartPosition.X.Scale, DragStartPosition.X.Offset + Delta.X,
-                    DragStartPosition.Y.Scale, DragStartPosition.Y.Offset + Delta.Y
-                )
+                local Size = Outer.AbsoluteSize
+                local Snapped = Library:SnapRect(Outer, {
+                    Left = DragStartAbsolute.X + Delta.X;
+                    Top = DragStartAbsolute.Y + Delta.Y;
+                    Width = Size.X;
+                    Height = Size.Y;
+                }, DragSnap)
+                Library:PlaceFrameRect(Outer, Snapped, false)
             elseif Resizing then
                 local Delta = Vector2.new(Input.Position.X, Input.Position.Y) - ResizeStartMouse
-                local NewSize = Vector2.new(
-                    math.max(ResizeStartSize.X + Delta.X, 180 * DPIScale),
-                    math.max(ResizeStartSize.Y + Delta.Y, 120 * DPIScale)
-                )
-
-                --// The window is centre-anchored, so changing the size normally grows
-                --// both edges at once. Offset the position by half the actual size
-                --// change so the opposite (top-left) corner stays put and only the
-                --// corner being dragged moves.
-                local SizeDelta = NewSize - ResizeStartSize
-                Outer.Size = UDim2.fromOffset(NewSize.X, NewSize.Y)
-                Outer.Position = UDim2.new(
-                    ResizeStartPosition.X.Scale, ResizeStartPosition.X.Offset + SizeDelta.X * 0.5,
-                    ResizeStartPosition.Y.Scale, ResizeStartPosition.Y.Offset + SizeDelta.Y * 0.5
-                )
+                local NewW = math.max(ResizeStartSize.X + Delta.X, 180 * DPIScale)
+                local NewH = math.max(ResizeStartSize.Y + Delta.Y, 120 * DPIScale)
+                local Snapped = Library:SnapRect(Outer, {
+                    Left = ResizeStartAbsolute.X;
+                    Top = ResizeStartAbsolute.Y;
+                    Width = NewW;
+                    Height = NewH;
+                }, { Right = true, Bottom = true })
+                Snapped.Width = math.max(Snapped.Width, 180 * DPIScale)
+                Snapped.Height = math.max(Snapped.Height, 120 * DPIScale)
+                Library:PlaceFrameRect(Outer, Snapped, true)
                 Popout:Resize()
             end
         end))
@@ -8299,9 +8614,11 @@ do
 
             if Dragging then
                 Dragging = false
+                Library:HideAlignGuides()
                 Popout:Save()
             elseif Resizing then
                 Resizing = false
+                Library:HideAlignGuides()
                 Popout.HasSavedSize = true
                 Popout:Resize()
                 Popout:Save()
@@ -8999,17 +9316,43 @@ do
 
             local Ok, Exists = pcall(isfile, File)
 
-            if Ok and Exists then
-                pcall(function()
-                    Contents = readfile(File)
-                end)
-            else
-                local LegacyOk, LegacyExists = pcall(isfile, LegacyFilterSaveFile)
+            local function ReadExisting(Path)
+                local ExistsOk, DoesExist = pcall(isfile, Path)
+                if ExistsOk and DoesExist then
+                    local ReadOk, Text = pcall(readfile, Path)
+                    if ReadOk and typeof(Text) == "string" then
+                        return Text
+                    end
+                end
+                return nil
+            end
 
-                if LegacyOk and LegacyExists then
-                    pcall(function()
-                        Contents = readfile(LegacyFilterSaveFile)
-                    end)
+            Contents = ReadExisting(File)
+
+            if not Contents then
+                local OldPaths = {}
+                local SM = Library.SaveManager
+                if typeof(SM) == "table" and type(SM.Folder) == "string" and SM.Folder ~= "" then
+                    if type(SM.SubFolder) == "string" and SM.SubFolder ~= "" then
+                        OldPaths[#OldPaths + 1] = SM.Folder .. "/settings/" .. SM.SubFolder .. "/keybindfilters.json"
+                    end
+                    OldPaths[#OldPaths + 1] = SM.Folder .. "/settings/keybindfilters.json"
+                end
+                OldPaths[#OldPaths + 1] = LegacyFilterSaveFile
+
+                for _, OldPath in next, OldPaths do
+                    local Text = ReadExisting(OldPath)
+                    if Text then
+                        Contents = Text
+                        pcall(function()
+                            Library:EnsureSettingsFolder(Library:GetLibrarySettingsFolder())
+                            writefile(File, Text)
+                            if OldPath ~= LegacyFilterSaveFile and typeof(delfile) == "function" then
+                                delfile(OldPath)
+                            end
+                        end)
+                        break
+                    end
                 end
             end
         end
@@ -9576,6 +9919,35 @@ function Library:CreateWindow(...)
     Library:AddToRegistry(Inner, {
         BackgroundColor3 = "MainColor";
         BorderColor3 = "AccentColor";
+    })
+
+    -- Drawn first so every later control paints over it. Crop fills the
+    -- whole window instead of the tab page only.
+    local InnerVideoBackground = Library:Create("VideoFrame", {
+        BackgroundColor3 = Library.MainColor;
+        BorderSizePixel = 0;
+        Position = UDim2.new(0, 1, 0, 1);
+        Size = UDim2.new(1, -2, 1, -2);
+        ZIndex = 1;
+        Visible = false;
+        Volume = 0;
+        Looped = true;
+        Active = false;
+        Parent = Inner;
+    })
+    Library.InnerVideoBackground = InnerVideoBackground
+
+    local BackgroundImage = Library:Create("ImageLabel", {
+        Image = "";
+        Position = UDim2.new(0, 1, 0, 1);
+        Size = UDim2.new(1, -2, 1, -2);
+        ScaleType = Enum.ScaleType.Crop;
+        ZIndex = 1;
+        BackgroundTransparency = 1;
+        ImageTransparency = 0.75;
+        Active = false;
+        Parent = Inner;
+        Visible = false;
     })
 
     local WindowLabel = Library:CreateLabel({
@@ -10614,32 +10986,6 @@ function Library:CreateWindow(...)
         Parent = MainSectionInner;
     })
     
-    local InnerVideoBackground = Library:Create("VideoFrame", {
-        BackgroundColor3 = Library.MainColor;
-        BorderMode = Enum.BorderMode.Inset;
-        BorderSizePixel = 0;
-        Position = UDim2.new(0, 1, 0, 1);
-        Size = UDim2.new(1, -2, 1, -2);
-        ZIndex = 2;
-        Visible = false;
-        Volume = 0;
-        Looped = true;
-        Parent = TabContainer;
-    })
-    Library.InnerVideoBackground = InnerVideoBackground
-
-    local BackgroundImage = Library:Create("ImageLabel", {
-        Image = "";
-        Position = UDim2.fromScale(0, 0);
-        Size = UDim2.fromScale(1, 1);
-        ScaleType = Enum.ScaleType.Stretch;
-        ZIndex = 2;
-        BackgroundTransparency = 1;
-        ImageTransparency = 0.75;
-        Parent = TabContainer;
-        Visible = false;
-    })
-
     Library:AddToRegistry(TabContainer, {
         BackgroundColor3 = "MainColor";
         BorderColor3 = "OutlineColor";
@@ -10651,6 +10997,50 @@ function Library:CreateWindow(...)
             WindowLabel.Text = Window.Title
         end
     end
+
+    local WallpaperFrames = { Inner, MainSectionOuter, MainSectionInner, TabContainer }
+
+    local function WallpaperShowing()
+        local ImageOn = BackgroundImage.Visible and BackgroundImage.Image ~= ""
+        local VideoOn = InnerVideoBackground.Visible == true
+        return ImageOn or VideoOn
+    end
+
+    local function SyncWallpaper()
+        local On = WallpaperShowing()
+
+        for _, Frame in next, WallpaperFrames do
+            local Entry = nil
+            for _, Object in next, Library.Registry do
+                if Object.Instance == Frame then
+                    Entry = Object
+                    break
+                end
+            end
+
+            if On then
+                if Entry then
+                    Entry.BaseTransparency = Entry.BaseTransparency or {}
+                    if Entry.BaseTransparency._WallpaperBase == nil then
+                        local Saved = Entry.BaseTransparency.BackgroundTransparency
+                        Entry.BaseTransparency._WallpaperBase = type(Saved) == "number" and Saved or 0
+                    end
+                    Entry.BaseTransparency.BackgroundTransparency = 1
+                end
+                Frame.BackgroundTransparency = 1
+            elseif Entry and Entry.BaseTransparency and Entry.BaseTransparency._WallpaperBase ~= nil then
+                Entry.BaseTransparency.BackgroundTransparency = Entry.BaseTransparency._WallpaperBase
+                Entry.BaseTransparency._WallpaperBase = nil
+            end
+        end
+
+        if not On then
+            Library:UpdateColorsUsingRegistry()
+        end
+    end
+
+    Library.SyncWallpaper = SyncWallpaper
+    InnerVideoBackground:GetPropertyChangedSignal("Visible"):Connect(SyncWallpaper)
 
     function Window:SetBackgroundImage(NewImage)
         if NewImage == nil then
@@ -10671,6 +11061,7 @@ function Library:CreateWindow(...)
         if Trimmed == "" then
             BackgroundImage.Image = ""
             BackgroundImage.Visible = false
+            SyncWallpaper()
             return
         end
 
@@ -10692,6 +11083,7 @@ function Library:CreateWindow(...)
         local Icon = Library:GetCustomIcon(Resolved)
         if not Icon or typeof(Icon.Url) ~= "string" or Icon.Url == "" then
             BackgroundImage.Visible = false
+            SyncWallpaper()
             return
         end
 
@@ -10706,6 +11098,7 @@ function Library:CreateWindow(...)
 
         BackgroundImage.ImageTransparency = math.clamp(Trans, 0, 1)
         BackgroundImage.Visible = true
+        SyncWallpaper()
     end
 
     function Window:AddDialog(Idx, Info)
@@ -12122,22 +12515,38 @@ end
                 TransparencyCache[Desc] = Cache
             end
 
+            local KeepClear = WallpaperShowing() and (
+                Desc == Inner or Desc == MainSectionOuter or Desc == MainSectionInner or Desc == TabContainer
+            )
+
             for _, Prop in next, Properties do
-                if not Cache[Prop] then
+                -- Snapshot the open look when closing. Sampling on the way
+                -- back in used to store the faded value and stack a grey veil.
+                if not Toggled and type(Desc[Prop]) == "number" and Desc[Prop] < 0.999 then
+                    Cache[Prop] = Desc[Prop]
+                elseif Cache[Prop] == nil and type(Desc[Prop]) == "number" then
                     Cache[Prop] = Desc[Prop]
                 end
 
-                if Cache[Prop] == 1 then
+                local Target = Toggled and Cache[Prop] or 1
+                if KeepClear and Prop == "BackgroundTransparency" then
+                    Target = 1
+                end
+
+                if Target == nil or Target == Desc[Prop] or (Target == 1 and Cache[Prop] == 1 and Toggled) then
                     continue
                 end
 
-                TweenService:Create(Desc, TweenInfo.new(FadeTime, Enum.EasingStyle.Linear), { [Prop] = Toggled and Cache[Prop] or 1 }):Play()
+                TweenService:Create(Desc, TweenInfo.new(FadeTime, Enum.EasingStyle.Linear), { [Prop] = Target }):Play()
             end
         end
 
         task.wait(FadeTime)
         Outer.Visible = Toggled
         Fading = false
+        if Toggled then
+            SyncWallpaper()
+        end
     end
 
     function Library:Toggle(Toggling)
@@ -12530,6 +12939,8 @@ do
         end
 
         Rec._FavKey = Library:FavoriteKey(Groupbox, Rec.Method, Element, Rec.Args)
+        Library.FavoriteRecords = Library.FavoriteRecords or {}
+        Library.FavoriteRecords[Rec._FavKey] = Rec
 
         local Star = Library:Create("TextButton", {
             BackgroundTransparency = 1;
@@ -12748,6 +13159,40 @@ do
         task.defer(function()
             RevealFavorites(Panel)
         end)
+    end
+
+    function Library:GetFavoriteList()
+        local List = {}
+
+        for Key, On in next, Library.FavoriteKeys or {} do
+            if On == true and type(Key) == "string" then
+                List[#List + 1] = Key
+            end
+        end
+
+        table.sort(List)
+        return List
+    end
+
+    function Library:ApplyFavoriteList(List)
+        local Wanted = {}
+
+        if type(List) == "table" then
+            for _, Key in next, List do
+                if type(Key) == "string" and string.find(Key, "/", 1, true) then
+                    Wanted[Key] = true
+                end
+            end
+        end
+
+        Library.FavoriteKeys = Wanted
+
+        for Key, Rec in next, Library.FavoriteRecords or {} do
+            local On = Wanted[Key] == true
+            if typeof(Rec) == "table" and Rec._Favorited ~= On then
+                Library:SetElementFavorite(Rec, On)
+            end
+        end
     end
 
     function Library:SetElementFavorite(Rec, On)
