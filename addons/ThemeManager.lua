@@ -48,7 +48,13 @@ if typeof(clonefunction) == "function" then
 end
 
 local ThemeManager = {} do
-	local ThemeFields = { "FontColor", "MainColor", "AccentColor", "BackgroundColor", "OutlineColor", "VideoLink", "BackgroundImageTransparency", "BackgroundImage" }
+	local ThemeFields = { "FontColor", "MainColor", "AccentColor", "BackgroundColor", "OutlineColor", "FontColorTransparency", "MainColorTransparency", "AccentColorTransparency", "BackgroundColorTransparency", "VideoLink", "BackgroundImageTransparency", "BackgroundImage" }
+	local ColorTransparencyFields = {
+		FontColor = "FontColorTransparency",
+		MainColor = "MainColorTransparency",
+		AccentColor = "AccentColorTransparency",
+		BackgroundColor = "BackgroundColorTransparency",
+	}
 	ThemeManager.Folder = "LinoriaLibSettings"
 	-- if not isfolder(ThemeManager.Folder) then makefolder(ThemeManager.Folder) end
 
@@ -249,8 +255,19 @@ local ThemeManager = {} do
 			elseif idx == "FontColor" or idx == "MainColor" or idx == "AccentColor" or idx == "BackgroundColor" or idx == "OutlineColor" then
 				self.Library[idx] = Color3.fromHex(col)
 
+				local TransField = ColorTransparencyFields[idx]
+				local Trans = 0
+				if TransField then
+					Trans = tonumber(Applied[TransField]) or 0
+					if Trans > 1 then
+						Trans = Trans / 100
+					end
+					Trans = math.clamp(Trans, 0, 1)
+					self.Library[TransField] = Trans
+				end
+
 				if self.Library.Options[idx] then
-					self.Library.Options[idx]:SetValueRGB(Color3.fromHex(col))
+					self.Library.Options[idx]:SetValueRGB(Color3.fromHex(col), Trans)
 				end
 			end
 		end
@@ -293,6 +310,13 @@ local ThemeManager = {} do
 				elseif field == "BackgroundImage" then
 					ApplyBackgroundImage(Value)
 				end
+			end
+		end
+
+		for ColorField, TransField in next, ColorTransparencyFields do
+			local Picker = self.Library.Options and self.Library.Options[ColorField]
+			if Picker and type(Picker.Transparency) == "number" then
+				self.Library[TransField] = math.clamp(Picker.Transparency, 0, 1)
 			end
 		end
 
@@ -347,7 +371,17 @@ local ThemeManager = {} do
 		local theme = {}
 		for _, field in next, ThemeFields do
 			local Option = self.Library.Options[field]
-			if Option then
+			local ColorName = nil
+			for Name, TransField in next, ColorTransparencyFields do
+				if TransField == field then
+					ColorName = Name
+					break
+				end
+			end
+
+			if ColorName and self.Library.Options[ColorName] then
+				theme[field] = self.Library.Options[ColorName].Transparency or 0
+			elseif Option then
 				if field == "VideoLink" or field == "BackgroundImage" or field == "BackgroundImageTransparency" then
 					theme[field] = Option.Value
 				else
@@ -402,11 +436,11 @@ local ThemeManager = {} do
 
 	--// GUI \\--
 	function ThemeManager:CreateThemeManager(groupbox)
-		groupbox:AddLabel('Background color'):AddColorPicker('BackgroundColor', { Default = self.Library.BackgroundColor });
-		groupbox:AddLabel('Main color')	:AddColorPicker('MainColor', { Default = self.Library.MainColor });
-		groupbox:AddLabel('Accent color'):AddColorPicker('AccentColor', { Default = self.Library.AccentColor });
+		groupbox:AddLabel('Background color'):AddColorPicker('BackgroundColor', { Default = self.Library.BackgroundColor, Transparency = self.Library.BackgroundColorTransparency or 0 });
+		groupbox:AddLabel('Main color')	:AddColorPicker('MainColor', { Default = self.Library.MainColor, Transparency = self.Library.MainColorTransparency or 0 });
+		groupbox:AddLabel('Accent color'):AddColorPicker('AccentColor', { Default = self.Library.AccentColor, Transparency = self.Library.AccentColorTransparency or 0 });
 		groupbox:AddLabel('Outline color'):AddColorPicker('OutlineColor', { Default = self.Library.OutlineColor });
-		groupbox:AddLabel('Font color')	:AddColorPicker('FontColor', { Default = self.Library.FontColor });
+		groupbox:AddLabel('Font color')	:AddColorPicker('FontColor', { Default = self.Library.FontColor, Transparency = self.Library.FontColorTransparency or 0 });
 		groupbox:AddInput('VideoLink', { Text = '.webm Video Background (Link)', Default = self.Library.VideoLink, Finished = true });
 		groupbox:AddInput('BackgroundImage', {
 			Text = 'Background image (url, file, or asset id)';

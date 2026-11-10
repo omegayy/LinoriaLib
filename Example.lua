@@ -47,12 +47,36 @@ end
 local function LoadLinoria(url)
 	url = FreshUrl(url)
 
-	local ok, body = pcall(function()
-		return game:HttpGet(url)
-	end)
+	local function Fetch(target)
+		local ok, body = pcall(function()
+			return game:HttpGet(target)
+		end)
 
-	if not ok or type(body) ~= "string" or #body < 50 then
-		error("[LinoriaLib] Download failed: " .. url .. "\n" .. tostring(body), 0)
+		if ok and type(body) == "string" and #body >= 50 then
+			return body
+		end
+
+		return nil, body
+	end
+
+	local body, err = Fetch(url)
+
+	-- builds/ has Library.lua, but the addons live next to it at the repo root.
+	if not body then
+		local fallback = url:gsub("/builds/addons/", "/addons/", 1)
+		if fallback ~= url then
+			local alt, altErr = Fetch(fallback)
+			if alt then
+				url = fallback
+				body = alt
+			else
+				err = altErr or err
+			end
+		end
+	end
+
+	if not body then
+		error("[LinoriaLib] Download failed: " .. url .. "\n" .. tostring(err), 0)
 	end
 
 	local fn, err = loadstring(body, url)
