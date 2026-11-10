@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-11-10u";
+    Version = "omgayy-2026-11-10v";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -13635,14 +13635,33 @@ do
             return
         end
 
+        local Wanted = 0
+        for _, On in next, Library.FavoriteKeys or {} do
+            if On == true then
+                Wanted += 1
+            end
+        end
+        if Wanted == 0 then
+            return
+        end
+
+        local RowKey = {}
+        for Key, Rec in next, Library.FavoriteRecords or {} do
+            if Library.FavoriteKeys and Library.FavoriteKeys[Key] == true and typeof(Rec) == "table" and Rec._Favorited and typeof(Rec._FavRow) == "Instance" then
+                RowKey[Rec._FavRow] = Key
+            end
+        end
+
         local Rows = {}
         for _, Child in next, Container:GetChildren() do
-            if Child:IsA("GuiObject") and Child ~= Library.FavoritesHint and Child.Visible and Child:GetAttribute("LinoriaFavRow") == true then
+            if Child:IsA("GuiObject") and Child:GetAttribute("LinoriaFavRow") == true and RowKey[Child] then
                 Rows[#Rows + 1] = Child
             end
         end
 
-        if #Rows == 0 then
+        -- A save during startup only has some rows built. Rewriting the
+        -- order from those rows put the first created control at the top.
+        if #Rows ~= Wanted then
             return
         end
 
@@ -13653,8 +13672,6 @@ do
             return A.AbsolutePosition.Y < B.AbsolutePosition.Y
         end)
 
-        -- Equal layout orders mean the list fell back to instance name,
-        -- which groups controls by type. Don't store that.
         if #Rows > 1 then
             local Same = true
             for _, Row in ipairs(Rows) do
@@ -13671,24 +13688,15 @@ do
         local Order = {}
         local Seen = {}
         for _, Row in ipairs(Rows) do
-            for Key, Rec in next, Library.FavoriteRecords or {} do
-                if not Seen[Key] and typeof(Rec) == "table" and Rec._Favorited and Rec._FavRow == Row then
-                    Order[#Order + 1] = Key
-                    Seen[Key] = true
-                    break
-                end
-            end
-        end
-
-        if #Order == 0 then
-            return
-        end
-
-        for _, Key in ipairs(Library.FavoriteOrder or {}) do
-            if Library.FavoriteKeys and Library.FavoriteKeys[Key] == true and not Seen[Key] then
+            local Key = RowKey[Row]
+            if type(Key) == "string" and not Seen[Key] then
                 Order[#Order + 1] = Key
                 Seen[Key] = true
             end
+        end
+
+        if #Order ~= Wanted then
+            return
         end
 
         Library.FavoriteOrder = Order
@@ -13750,6 +13758,13 @@ do
         for Key, Rec in next, Library.FavoriteRecords or {} do
             if typeof(Rec) == "table" and Rec._Favorited and Wanted[Key] ~= true then
                 Library:SetElementFavorite(Rec, false)
+            end
+        end
+
+        for _, Key in ipairs(Library.FavoriteOrder or {}) do
+            local Rec = Library.FavoriteRecords and Library.FavoriteRecords[Key]
+            if typeof(Rec) == "table" then
+                Library:ApplyFavoriteLayoutOrder(Rec)
             end
         end
     end
