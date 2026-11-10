@@ -8164,7 +8164,7 @@ do
             if Dragging then
                 Dragging = false
                 Popout:Save()
-            else            if Resizing then
+            elseif Resizing then
                 Resizing = false
                 Popout.HasSavedSize = true
                 Popout:Resize()

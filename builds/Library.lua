@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-11-10f";
+    Version = "omgayy-2026-11-10g";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -8201,7 +8201,7 @@ do
             if Dragging then
                 Dragging = false
                 Popout:Save()
-            else            if Resizing then
+            elseif Resizing then
                 Resizing = false
                 Popout.HasSavedSize = true
                 Popout:Resize()
