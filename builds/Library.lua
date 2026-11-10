@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-11-10v";
+    Version = "omgayy-2026-11-10w";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -8187,6 +8187,8 @@ do
             return SettingOrder
         end
 
+        local SettingRefreshes = {}
+
         local function CreateSettingRow(Text, GetValue, OnClick)
             local Row = Library:Create("TextButton", {
                 AutoButtonColor = false;
@@ -8244,9 +8246,15 @@ do
 
             Library:AddToRegistry(Fill, { BackgroundColor3 = "AccentColor" })
 
+            local function RefreshRow()
+                Fill.BackgroundTransparency = GetValue() and 0 or 1
+            end
+
+            SettingRefreshes[#SettingRefreshes + 1] = RefreshRow
+
             Row.MouseButton1Click:Connect(function()
                 OnClick()
-                Fill.BackgroundTransparency = GetValue() and 0 or 1
+                RefreshRow()
             end)
 
             return Row, Label
@@ -8380,6 +8388,7 @@ do
 
             UpdateTabRow()
             RebuildTabList()
+            Popout.SyncTabRow = UpdateTabRow
 
             TabRow.MouseButton1Click:Connect(function()
                 TabList.Visible = not TabList.Visible
@@ -8406,6 +8415,7 @@ do
             return Popout.Locked
         end, function()
             Popout.Locked = not Popout.Locked
+            Popout:Save()
         end)
 
         local _, KeybindLabel = CreateSettingRow("", function()
@@ -8616,30 +8626,21 @@ do
                 Popout.ShowWhenMenuClosed = Saved.ShowWhenMenuClosed
             end
 
-            if typeof(Saved.ShowWhenTab) == "string" then
+            if typeof(Saved.ShowWhenTab) == "string" and Saved.ShowWhenTab ~= "" then
                 Popout.ShowWhenTab = Saved.ShowWhenTab
-            elseif Saved.ShowWhenTab == nil then
+            else
                 Popout.ShowWhenTab = nil
             end
 
-            if typeof(Saved.Keybind) == "string" then
+            if typeof(Saved.Keybind) == "string" and Saved.Keybind ~= "" and Saved.Keybind ~= "None" then
                 Popout.Keybind = Saved.Keybind
-                KeybindLabel.Text = "Keybind: " .. Popout.Keybind
+            else
+                Popout.Keybind = nil
             end
 
             if typeof(Saved.Transparency) == "number" then
-                Popout.Transparency = Saved.Transparency
-                if Popout.Transparency > 0 then
-                    pcall(function()
-                        Popout:SetTransparency(Popout.Transparency)
-                    end)
-                end
-
-                --// Keep the settings row label in sync with the restored value \\--
                 pcall(function()
-                    if type(Popout.SyncTransparencyRow) == "function" then
-                        Popout.SyncTransparencyRow()
-                    end
+                    Popout:SetTransparency(Saved.Transparency)
                 end)
             end
 
@@ -8655,6 +8656,29 @@ do
             if typeof(Saved.Visible) == "boolean" and not Popout.LinkedToggle then
                 Popout.Visible = Saved.Visible
             end
+
+            if type(Popout.SyncSettings) == "function" then
+                Popout:SyncSettings()
+            else
+                Popout:UpdateVisibility()
+            end
+        end
+
+        function Popout:SyncSettings()
+            for _, Refresh in ipairs(SettingRefreshes) do
+                Refresh()
+            end
+
+            if type(Popout.SyncTabRow) == "function" then
+                Popout.SyncTabRow()
+            end
+
+            if type(Popout.SyncTransparencyRow) == "function" then
+                Popout.SyncTransparencyRow()
+            end
+
+            KeybindLabel.Text = ListeningForKey and "Keybind: press a key..." or ("Keybind: " .. (Popout.Keybind or "None"))
+            Popout:UpdateVisibility()
         end
 
         Popout.DefaultPosition = Outer.Position
