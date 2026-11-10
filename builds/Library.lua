@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-11-10q";
+    Version = "omgayy-2026-11-10r";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -13166,6 +13166,7 @@ do
             TextSize = 14;
             TextWrapped = true;
             TextXAlignment = Enum.TextXAlignment.Left;
+            LayoutOrder = -1;
             ZIndex = 5;
             Parent = Panel.Container or Panel.Content;
         })
@@ -13378,8 +13379,10 @@ do
             end
         end
 
+        Kill(Rec._FavRow)
         Rec._FavNodes = nil
         Rec._FavMirror = nil
+        Rec._FavRow = nil
         Rec._FavMirrored = false
     end
 
@@ -13466,6 +13469,50 @@ do
             return
         end
 
+        -- One row per favorite. Pieces of a slider (label, gap, bar) used to
+        -- share a LayoutOrder, and the list then tie-breaks by instance name,
+        -- which groups every Frame, TextButton, and TextLabel together.
+        local Parts = {}
+        for _, Node in ipairs(Rec._FavNodes) do
+            if typeof(Node) == "Instance" and Node.Parent == Container and Node ~= Library.FavoritesHint then
+                Parts[#Parts + 1] = Node
+            end
+        end
+
+        if #Parts > 0 then
+            local Row = Library:Create("Frame", {
+                BackgroundTransparency = 1;
+                BorderSizePixel = 0;
+                Size = UDim2.new(1, 0, 0, 0);
+                ClipsDescendants = false;
+                ZIndex = 5;
+                Parent = Container;
+            })
+            Row:SetAttribute("LinoriaFavRow", true)
+
+            local RowLayout = Library:Create("UIListLayout", {
+                FillDirection = Enum.FillDirection.Vertical;
+                SortOrder = Enum.SortOrder.LayoutOrder;
+                Parent = Row;
+            })
+
+            for Index, Node in ipairs(Parts) do
+                Node.LayoutOrder = Index
+                Node.Parent = Row
+            end
+
+            local function FitRow()
+                Row.Size = UDim2.new(1, 0, 0, RowLayout.AbsoluteContentSize.Y)
+            end
+
+            RowLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(FitRow)
+            FitRow()
+            task.defer(FitRow)
+
+            Rec._FavRow = Row
+            RememberNode(Rec, Row)
+        end
+
         Rec._FavMirrored = true
         Library:SyncFavoritesHint()
         RevealFavorites(Panel)
@@ -13517,13 +13564,13 @@ do
             return
         end
 
-        local Index = Library:FavoriteIndex(Rec._FavKey) or 1
-
-        for _, Node in next, Rec._FavNodes or {} do
-            if typeof(Node) == "Instance" and Node:IsA("GuiObject") then
-                Node.LayoutOrder = Index
-            end
+        local Index = Library:FavoriteIndex(Rec._FavKey)
+        local Row = Rec._FavRow
+        if not Index or typeof(Row) ~= "Instance" then
+            return
         end
+
+        Row.LayoutOrder = Index
     end
 
     function Library:SyncFavoriteOrderFromPanel()
@@ -13535,9 +13582,13 @@ do
 
         local Rows = {}
         for _, Child in next, Container:GetChildren() do
-            if Child:IsA("GuiObject") and Child ~= Library.FavoritesHint and Child.Visible then
+            if Child:IsA("GuiObject") and Child ~= Library.FavoritesHint and Child.Visible and Child:GetAttribute("LinoriaFavRow") == true then
                 Rows[#Rows + 1] = Child
             end
+        end
+
+        if #Rows == 0 then
+            return
         end
 
         table.sort(Rows, function(A, B)
@@ -13547,24 +13598,45 @@ do
             return A.AbsolutePosition.Y < B.AbsolutePosition.Y
         end)
 
-        local Seen = {}
-        for _, Key in ipairs(Library.FavoriteOrder or {}) do
-            Seen[Key] = true
+        -- Equal layout orders mean the list fell back to instance name,
+        -- which groups controls by type. Don't store that.
+        if #Rows > 1 then
+            local Same = true
+            for _, Row in ipairs(Rows) do
+                if Row.LayoutOrder ~= Rows[1].LayoutOrder then
+                    Same = false
+                    break
+                end
+            end
+            if Same then
+                return
+            end
         end
 
+        local Order = {}
+        local Seen = {}
         for _, Row in ipairs(Rows) do
             for Key, Rec in next, Library.FavoriteRecords or {} do
-                if not Seen[Key] and typeof(Rec) == "table" and Rec._Favorited and type(Rec._FavNodes) == "table" then
-                    for _, Node in next, Rec._FavNodes do
-                        if Node == Row then
-                            Library:RememberFavoriteOrder(Key)
-                            Seen[Key] = true
-                            break
-                        end
-                    end
+                if not Seen[Key] and typeof(Rec) == "table" and Rec._Favorited and Rec._FavRow == Row then
+                    Order[#Order + 1] = Key
+                    Seen[Key] = true
+                    break
                 end
             end
         end
+
+        if #Order == 0 then
+            return
+        end
+
+        for _, Key in ipairs(Library.FavoriteOrder or {}) do
+            if Library.FavoriteKeys and Library.FavoriteKeys[Key] == true and not Seen[Key] then
+                Order[#Order + 1] = Key
+                Seen[Key] = true
+            end
+        end
+
+        Library.FavoriteOrder = Order
     end
 
     function Library:GetFavoriteList()
@@ -13580,18 +13652,14 @@ do
             end
         end
 
-        -- Keys starred before an order was stored. Keep them after the
-        -- ones whose order we already know, without sorting the known ones.
-        local Rest = {}
+        -- Starred before an order existed. Append in record order.
+        -- Sorting the key would group them by type, because the key
+        -- contains AddToggle / AddSlider / AddButton.
         for Key, On in next, Library.FavoriteKeys or {} do
             if On == true and type(Key) == "string" and not Seen[Key] then
-                Rest[#Rest + 1] = Key
+                Seen[Key] = true
+                List[#List + 1] = Key
             end
-        end
-
-        table.sort(Rest)
-        for _, Key in ipairs(Rest) do
-            List[#List + 1] = Key
         end
 
         return List
@@ -13613,12 +13681,20 @@ do
         Library.FavoriteKeys = Wanted
         Library.FavoriteOrder = Order
 
+        for _, Key in ipairs(Order) do
+            local Rec = Library.FavoriteRecords and Library.FavoriteRecords[Key]
+            if typeof(Rec) == "table" then
+                if Rec._Favorited ~= true then
+                    Library:SetElementFavorite(Rec, true)
+                else
+                    Library:ApplyFavoriteLayoutOrder(Rec)
+                end
+            end
+        end
+
         for Key, Rec in next, Library.FavoriteRecords or {} do
-            local On = Wanted[Key] == true
-            if typeof(Rec) == "table" and Rec._Favorited ~= On then
-                Library:SetElementFavorite(Rec, On)
-            elseif On then
-                Library:ApplyFavoriteLayoutOrder(Rec)
+            if typeof(Rec) == "table" and Rec._Favorited and Wanted[Key] ~= true then
+                Library:SetElementFavorite(Rec, false)
             end
         end
     end
