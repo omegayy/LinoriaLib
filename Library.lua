@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-11-10p";
+    Version = "omgayy-2026-11-10q";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -1822,6 +1822,24 @@ function Library:UpdateColorsUsingRegistry()
                 Object.Instance[Property] = ColorIdx()
             end
         end
+    end
+end
+
+function Library:TrackBackdrop(Frame)
+    if typeof(Frame) ~= "Instance" then
+        return
+    end
+
+    Frame:SetAttribute("LinoriaBackdrop", true)
+    Library.WindowBackdropFrames = Library.WindowBackdropFrames or {}
+
+    if not table.find(Library.WindowBackdropFrames, Frame) then
+        table.insert(Library.WindowBackdropFrames, Frame)
+    end
+
+    local Amount = Library.WindowBackgroundTransparency
+    if type(Amount) == "number" then
+        Frame.BackgroundTransparency = Amount
     end
 end
 
@@ -7306,6 +7324,7 @@ do
             BackgroundColor3 = "BackgroundColor";
             BorderColor3 = "OutlineColor";
         })
+        Library:TrackBackdrop(BoxOuter)
 
         local BoxInner = Library:Create("Frame", {
             BackgroundColor3 = Library.BackgroundColor;
@@ -7320,6 +7339,7 @@ do
         Library:AddToRegistry(BoxInner, {
             BackgroundColor3 = "BackgroundColor";
         })
+        Library:TrackBackdrop(BoxInner)
 
         local Highlight = Library:Create("Frame", {
             BackgroundColor3 = Library.AccentColor;
@@ -11318,11 +11338,9 @@ function Library:CreateWindow(...)
         end
     end
 
-    local WallpaperFrames = { Inner, MainSectionOuter, MainSectionInner, TabContainer }
-    for _, Frame in next, WallpaperFrames do
-        Frame:SetAttribute("LinoriaBackdrop", true)
+    for _, Frame in next, { Inner, MainSectionOuter, MainSectionInner, TabContainer } do
+        Library:TrackBackdrop(Frame)
     end
-    Library.WindowBackdropFrames = WallpaperFrames
 
     local function WallpaperShowing()
         local ImageOn = BackgroundImage.Visible and BackgroundImage.Image ~= ""
@@ -12249,6 +12267,7 @@ end
                 BackgroundColor3 = "BackgroundColor";
                 BorderColor3 = "OutlineColor";
             })
+            Library:TrackBackdrop(BoxOuter)
 
             local BoxInner = Library:Create("Frame", {
                 BackgroundColor3 = Library.BackgroundColor;
@@ -12263,6 +12282,7 @@ end
             Library:AddToRegistry(BoxInner, {
                 BackgroundColor3 = "BackgroundColor";
             })
+            Library:TrackBackdrop(BoxInner)
 
             local Highlight = Library:Create("Frame", {
                 BackgroundColor3 = Library.AccentColor;
@@ -12491,6 +12511,7 @@ end
                 BackgroundColor3 = "BackgroundColor";
                 BorderColor3 = "OutlineColor";
             })
+            Library:TrackBackdrop(BoxOuter)
 
             local BoxInner = Library:Create("Frame", {
                 BackgroundColor3 = Library.BackgroundColor;
@@ -12505,6 +12526,7 @@ end
             Library:AddToRegistry(BoxInner, {
                 BackgroundColor3 = "BackgroundColor";
             })
+            Library:TrackBackdrop(BoxInner)
 
             local Highlight = Library:Create("Frame", {
                 BackgroundColor3 = Library.AccentColor;
@@ -12810,9 +12832,7 @@ end
                 TransparencyCache[Desc] = Cache
             end
 
-            local KeepClear = WallpaperShowing() and (
-                Desc == Inner or Desc == MainSectionOuter or Desc == MainSectionInner or Desc == TabContainer
-            )
+            local KeepClear = Desc:GetAttribute("LinoriaBackdrop") == true
 
             for _, Prop in next, Properties do
                 -- Snapshot the open look when closing. Sampling on the way
