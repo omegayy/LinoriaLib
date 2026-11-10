@@ -201,20 +201,54 @@ local SaveManager = {} do
         end
     end
 
+    function SaveManager:ReloadPopoutLayouts()
+        local Library = self.Library
+        if typeof(Library) ~= "table" then
+            return
+        end
+
+        if type(Library.LoadPopouts) == "function" then
+            pcall(function()
+                Library:LoadPopouts()
+            end)
+        end
+
+        if type(Library.ApplyPopoutLayouts) == "function" then
+            pcall(function()
+                Library:ApplyPopoutLayouts()
+            end)
+        end
+    end
+
     function SaveManager:SetFolder(folder)
         self.Folder = folder;
         self:BuildFolderTree()
+        self:ReloadPopoutLayouts()
     end
 
     function SaveManager:SetSubFolder(folder)
         self.SubFolder = folder;
         self:BuildFolderTree()
+        self:ReloadPopoutLayouts()
     end
 
     --// Save, Load, Delete, Refresh \\--
+    local function IsLibraryFile(name)
+        if typeof(name) ~= "string" then
+            return false
+        end
+
+        local Key = string.lower(name)
+        return Key == "keybindfilters" or Key == "popouts"
+    end
+
     function SaveManager:Save(name)
         if (not name) then
             return false, 'no config file is selected'
+        end
+
+        if IsLibraryFile(name) then
+            return false, 'that name is reserved by the library'
         end
         SaveManager:CheckFolderTree()
 
@@ -278,6 +312,10 @@ local SaveManager = {} do
         if (not name) then
             return false, 'no config file is selected'
         end
+
+        if IsLibraryFile(name) then
+            return false, 'that name is reserved by the library'
+        end
         SaveManager:CheckFolderTree()
 
         local file = self.Folder .. '/settings/' .. name .. '.json'
@@ -330,6 +368,10 @@ local SaveManager = {} do
             return false, 'no config file is selected'
         end
 
+        if IsLibraryFile(name) then
+            return false, 'that name is reserved by the library'
+        end
+
         local file = self.Folder .. '/settings/' .. name .. '.json'
         if SaveManager:CheckSubFolder(true) then
             file = self.Folder .. "/settings/" .. self.SubFolder .. "/" .. name .. '.json'
@@ -357,6 +399,11 @@ local SaveManager = {} do
             end
             if typeof(list) ~= "table" then list = {} end
 
+            local Reserved = {
+                keybindfilters = true,
+                popouts = true,
+            }
+
             for i = 1, #list do
                 local file = list[i]
                 if file:sub(-5) == '.json' then
@@ -372,7 +419,11 @@ local SaveManager = {} do
                     end
 
                     if char == '/' or char == '\\' then
-                        table.insert(out, file:sub(pos + 1, start - 1))
+                        local Name = file:sub(pos + 1, start - 1)
+                        -- Library bookkeeping, not a config the user saved.
+                        if not Reserved[string.lower(Name)] then
+                            table.insert(out, Name)
+                        end
                     end
                 end
             end

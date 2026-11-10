@@ -6956,7 +6956,25 @@ end
 --// Popout Windows \\--
 do
     local HttpService = game:GetService("HttpService")
-    local PopoutSaveFile = "LinoriaLibSettings/popouts.json"
+    local LegacyPopoutSaveFile = "LinoriaLibSettings/popouts.json"
+
+    local function GetPopoutSaveFile()
+        local SM = Library.SaveManager
+
+        if typeof(SM) == "table" and typeof(SM.Folder) == "string" and SM.Folder ~= "" then
+            local Folder = SM.Folder
+
+            if typeof(SM.SubFolder) == "string" and SM.SubFolder ~= "" then
+                Folder = Folder .. "/settings/" .. SM.SubFolder
+            else
+                Folder = Folder .. "/settings"
+            end
+
+            return Folder .. "/popouts.json"
+        end
+
+        return LegacyPopoutSaveFile
+    end
 
     local function TryWriteFile(Contents)
         if typeof(writefile) ~= "function" then
@@ -6964,13 +6982,24 @@ do
         end
 
         local Ok = pcall(function()
-            if typeof(makefolder) == "function" and typeof(isfolder) == "function" then
-                if not isfolder("LinoriaLibSettings") then
-                    makefolder("LinoriaLibSettings")
+            local Path = GetPopoutSaveFile()
+            local Folder = Path:match("^(.*)/[^/]+$")
+
+            if Folder and typeof(makefolder) == "function" and typeof(isfolder) == "function" then
+                local Traversed = ""
+
+                for _, Segment in ipairs(Folder:split("/")) do
+                    if Segment ~= "" then
+                        Traversed = Traversed == "" and Segment or (Traversed .. "/" .. Segment)
+
+                        if not isfolder(Traversed) then
+                            makefolder(Traversed)
+                        end
+                    end
                 end
             end
 
-            writefile(PopoutSaveFile, Contents)
+            writefile(Path, Contents)
         end)
 
         return Ok
@@ -6981,14 +7010,24 @@ do
             return nil
         end
 
+        local Path = GetPopoutSaveFile()
+
         if typeof(isfile) == "function" then
-            local Ok, Exists = pcall(isfile, PopoutSaveFile)
+            local Ok, Exists = pcall(isfile, Path)
             if Ok and not Exists then
-                return nil
+                if Path ~= LegacyPopoutSaveFile then
+                    Path = LegacyPopoutSaveFile
+                    local LegacyOk, LegacyExists = pcall(isfile, Path)
+                    if LegacyOk and not LegacyExists then
+                        return nil
+                    end
+                else
+                    return nil
+                end
             end
         end
 
-        local Success, Contents = pcall(readfile, PopoutSaveFile)
+        local Success, Contents = pcall(readfile, Path)
         if not Success or typeof(Contents) ~= "string" then
             return nil
         end
@@ -7017,6 +7056,15 @@ do
 
     function Library:SavePopouts()
         local Data = {}
+
+        -- Keep layouts for popouts that are not open yet, so a save does not forget them.
+        if typeof(Library.PopoutLayout) == "table" then
+            for Name, Layout in next, Library.PopoutLayout do
+                if typeof(Name) == "string" and typeof(Layout) == "table" then
+                    Data[Name] = Layout
+                end
+            end
+        end
 
         for _, Popout in ipairs(Library.Popouts) do
             if Popout.Destroyed then
@@ -7070,6 +7118,26 @@ do
         end
 
         print("[Popout] Applied " .. Count .. " layout(s) to " .. #Library.Popouts .. " popout(s)")
+
+        --// Groupboxes only exist as floating windows after you press P.
+        --// Open the ones that were popped out when this layout was saved. \\--
+        if typeof(Library.GroupboxByPopoutName) == "table" then
+            for Name, Saved in next, Library.PopoutLayout do
+                if typeof(Name) == "string" and typeof(Saved) == "table" and Saved.Visible == true then
+                    local Existing = type(Library.GetPopout) == "function" and Library:GetPopout(Name) or nil
+
+                    if not Existing or Existing.Destroyed then
+                        local Groupbox = Library.GroupboxByPopoutName[Name]
+
+                        if type(Groupbox) == "table" and type(Groupbox.Popout) == "function" then
+                            pcall(function()
+                                Groupbox:Popout()
+                            end)
+                        end
+                    end
+                end
+            end
+        end
     end
 
     local function PackFrame(Frame, IncludeSize)
@@ -7442,7 +7510,7 @@ do
         local SettingsOuter = Library:Create("Frame", {
             AnchorPoint = Vector2.new(1, 0);
             Position = UDim2.new(1, -3, 0, 22);
-            Size = UDim2.fromOffset(190, 180);
+            Size = UDim2.fromOffset(190, 210);
             BackgroundColor3 = Color3.new(0, 0, 0);
             BorderColor3 = Color3.new(0, 0, 0);
             Visible = false;
@@ -7715,41 +7783,76 @@ do
 
         KeybindLabel.Text = "Keybind: " .. (Popout.Keybind or "None")
 
-        --// Per-popout transparency cycle (0% -> 25% -> 50% -> 75% -> 0%) \\--
+        --// Per-popout transparency, dragged from 0% to 100% \\--
         do
-            local TransparencyRow = Library:Create("TextButton", {
+            local TransparencyLabel = Library:CreateLabel({
+                Size = UDim2.new(1, 0, 0, 14);
+                Text = "Transparency: 0%";
+                TextSize = 13;
+                TextXAlignment = Enum.TextXAlignment.Left;
+                ZIndex = 213;
+                LayoutOrder = NextOrder();
+                Parent = SettingsInner;
+            })
+
+            local Track = Library:Create("TextButton", {
                 AutoButtonColor = false;
                 BackgroundColor3 = Library.MainColor;
                 BorderColor3 = Library.OutlineColor;
-                BorderMode = Enum.BorderMode.Middle;
+                BorderMode = Enum.BorderMode.Inset;
                 LayoutOrder = NextOrder();
-                Size = UDim2.new(1, 0, 0, 18);
-                Font = Library.Font;
-                Text = "Transparency (click): 0%";
-                TextColor3 = Library.FontColor;
-                TextSize = 13;
+                Size = UDim2.new(1, 0, 0, 12);
+                Text = "";
                 ZIndex = 212;
                 Parent = SettingsInner;
             })
 
-            Library:ApplyTextStroke(TransparencyRow)
-            Library:AddToRegistry(TransparencyRow, {
+            Library:AddToRegistry(Track, {
                 BackgroundColor3 = "MainColor";
                 BorderColor3 = "OutlineColor";
-                TextColor3 = "FontColor";
             })
 
-            local Levels = { 0, 0.25, 0.5, 0.75 }
-            local LevelIdx = 1
+            local Fill = Library:Create("Frame", {
+                BackgroundColor3 = Library.AccentColor;
+                BorderSizePixel = 0;
+                Size = UDim2.new(0, 0, 1, 0);
+                ZIndex = 213;
+                Parent = Track;
+            })
 
-            TransparencyRow.MouseButton1Click:Connect(function()
-                LevelIdx = (LevelIdx % #Levels) + 1
-                local Value = Levels[LevelIdx]
-                Popout:SetTransparency(Value)
-                TransparencyRow.Text = string.format("Transparency (click): %d%%", math.floor(Value * 100 + 0.5))
+            Library:AddToRegistry(Fill, { BackgroundColor3 = "AccentColor" })
+
+            local function UpdateTransparencySlider()
+                local Value = math.clamp(tonumber(Popout.Transparency) or 0, 0, 1)
+                TransparencyLabel.Text = string.format("Transparency: %d%%", math.floor(Value * 100 + 0.5))
+                Fill.Size = UDim2.new(Value, 0, 1, 0)
+            end
+
+            Popout.SyncTransparencyRow = UpdateTransparencySlider
+
+            local function ApplyFromMouse()
+                local Width = math.max(Track.AbsoluteSize.X, 1)
+                local Alpha = math.clamp((Mouse.X - Track.AbsolutePosition.X) / Width, 0, 1)
+                Popout:SetTransparency(Alpha)
+                UpdateTransparencySlider()
+            end
+
+            Track.InputBegan:Connect(function(Input)
+                if Input.UserInputType ~= Enum.UserInputType.MouseButton1 and Input.UserInputType ~= Enum.UserInputType.Touch then
+                    return
+                end
+
+                ApplyFromMouse()
+
+                while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
+                    ApplyFromMouse()
+                    RunService.RenderStepped:Wait()
+                end
 
                 Popout:Save()
             end)
+
+            UpdateTransparencySlider()
         end
 
         do
@@ -7854,6 +7957,7 @@ do
 
             if typeof(Size) == "table" and #Size >= 2 then
                 Outer.Size = UDim2.fromOffset(Size[1], Size[2])
+                Popout.HasSavedSize = true
             end
 
             if typeof(Saved.ShowWhenMenuClosed) == "boolean" then
@@ -7878,6 +7982,12 @@ do
                         Popout:SetTransparency(Popout.Transparency)
                     end)
                 end
+
+                pcall(function()
+                    if type(Popout.SyncTransparencyRow) == "function" then
+                        Popout.SyncTransparencyRow()
+                    end
+                end)
             end
 
             if typeof(Saved.Resizable) == "boolean" then
@@ -8054,8 +8164,9 @@ do
             if Dragging then
                 Dragging = false
                 Popout:Save()
-            elseif Resizing then
+            else            if Resizing then
                 Resizing = false
+                Popout.HasSavedSize = true
                 Popout:Resize()
                 Popout:Save()
             end
@@ -11336,6 +11447,7 @@ end
 
                 Groupbox.Controls = Panel
                 Groupbox._PopoutPanel = Panel
+                Panel:SetVisible(true)
 
                 if type(Groupbox.Resize) == "function" then
                     Groupbox:Resize()
@@ -11357,6 +11469,11 @@ end
             Groupbox:Resize()
 
             Tab.Groupboxes[Info.Name] = Groupbox
+
+            Library.GroupboxByPopoutName = Library.GroupboxByPopoutName or {}
+            if type(Groupbox.Name) == "string" and Groupbox.Name ~= "" then
+                Library.GroupboxByPopoutName[Groupbox.Name] = Groupbox
+            end
 
             return Groupbox
         end
@@ -12385,7 +12502,8 @@ function Library:FitPopoutToContent(Panel)
         local Current = Outer.AbsoluteSize.Y
         local Wanted = math.clamp(Needed + 64, 120, 620)
 
-        if Needed > 0 and Wanted > Current + 4 then
+        -- A restored or user-resized window keeps its size. The canvas still scrolls.
+        if (not Panel.HasSavedSize) and Needed > 0 and Wanted > Current + 4 then
             Outer.Size = UDim2.fromOffset(Outer.AbsoluteSize.X, Wanted)
 
             pcall(function()
