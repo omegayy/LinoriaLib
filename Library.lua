@@ -270,6 +270,10 @@ local Library = {
     VideoLink = "";
     BackgroundImage = "";
     BackgroundImageTransparency = 0.75;
+    BackgroundColorTransparency = 0;
+    MainColorTransparency = 0;
+    AccentColorTransparency = 0;
+    FontColorTransparency = 0;
     WatermarkTransparency = 0;
     
     Toggled = false;
@@ -1448,10 +1452,56 @@ function Library:UpdateColorsUsingRegistry()
 
     -- The above would be especially efficient for a rainbow menu color or live color-changing.
 
+    local FillTransparency = {
+        BackgroundColor = "BackgroundColorTransparency";
+        MainColor = "MainColorTransparency";
+        AccentColor = "AccentColorTransparency";
+    }
+
+    local function ApplyTransparency(Object, Property, ColorIdx)
+        local TransKey = nil
+        local TransProp = nil
+
+        if Property == "BackgroundColor3" then
+            TransKey = FillTransparency[ColorIdx]
+            TransProp = "BackgroundTransparency"
+        elseif Property == "TextColor3" and ColorIdx == "FontColor" then
+            TransKey = "FontColorTransparency"
+            TransProp = "TextTransparency"
+        end
+
+        if not TransKey then
+            return
+        end
+
+        local Amount = Library[TransKey]
+        if type(Amount) ~= "number" then
+            return
+        end
+
+        Amount = math.clamp(Amount, 0, 1)
+        Object.BaseTransparency = Object.BaseTransparency or {}
+
+        if Object.BaseTransparency[TransProp] == nil then
+            local Current = Object.Instance[TransProp]
+            Object.BaseTransparency[TransProp] = type(Current) == "number" and Current or 0
+        end
+
+        local Base = Object.BaseTransparency[TransProp]
+        if Base >= 1 then
+            return
+        end
+
+        pcall(function()
+            Object.Instance[TransProp] = Base + (1 - Base) * Amount
+        end)
+    end
+
     for Idx, Object in next, Library.Registry do
         for Property, ColorIdx in next, Object.Properties do
             if typeof(ColorIdx) == "string" then
                 Object.Instance[Property] = Library[ColorIdx]
+                ApplyTransparency(Object, Property, ColorIdx)
             elseif typeof(ColorIdx) == "function" then
                 Object.Instance[Property] = ColorIdx()
             end
@@ -2698,7 +2748,7 @@ do
             Size = UDim2.new(0, 27, 0, 13);
             ZIndex = 5;
             Image = CustomImageManager.GetAsset("Checker");
-            Visible = not not Info.Transparency;
+            Visible = Info.Transparency ~= nil;
             Parent = DisplayFrame;
         })
 
@@ -2712,7 +2762,7 @@ do
             BackgroundColor3 = Color3.new(1, 1, 1);
             BorderColor3 = Color3.new(0, 0, 0);
             Position = UDim2.fromOffset(DisplayFrame.AbsolutePosition.X, DisplayFrame.AbsolutePosition.Y + 18),
-            Size = UDim2.fromOffset(230, Info.Transparency and 271 or 253);
+            Size = UDim2.fromOffset(230, Info.Transparency ~= nil and 271 or 253);
             Visible = false;
             ZIndex = 15;
             Parent = ScreenGui,
@@ -2867,7 +2917,7 @@ do
 
         local TransparencyBoxOuter, TransparencyBoxInner, TransparencyCursor
         
-        if Info.Transparency then 
+        if Info.Transparency ~= nil then 
             TransparencyBoxOuter = Library:Create("Frame", {
                 BorderColor3 = Color3.new(0, 0, 0);
                 Position = UDim2.fromOffset(4, 251);
@@ -8368,7 +8418,7 @@ do
         BorderMode = Enum.BorderMode.Inset;
         AnchorPoint = Vector2.new(1, 0);
         Position = UDim2.new(1, -2, 0, 21);
-        Size = UDim2.new(0, 158, 0, 80);
+        Size = UDim2.new(0, 158, 0, 104);
         Visible = false;
         ZIndex = 300;
         Parent = KeybindInner;
@@ -8505,56 +8555,79 @@ do
         function() return Library.KeybindFilters.ShowEnabledOnly end
     )
 
-    --// Keybind menu transparency. The label always shows the real value
-    --// (including values set from the options slider). Clicking cycles presets. \\--
+    --// Same drag slider the other popouts use. Stays in sync with the options slider. \\--
     do
-        local TransRow = Library:Create("TextButton", {
-            AutoButtonColor = false;
-            BackgroundColor3 = Library.MainColor;
-            BorderColor3 = Library.OutlineColor;
-            BorderMode = Enum.BorderMode.Middle;
+        local TransparencyLabel = Library:CreateLabel({
+            BackgroundTransparency = 1;
             Position = UDim2.fromOffset(6, 22 + (2 * 18));
-            Size = UDim2.new(1, -12, 0, 16);
-            Font = Library.Font;
+            Size = UDim2.new(1, -12, 0, 14);
             Text = "Transparency: 0%";
-            TextColor3 = Library.FontColor;
             TextSize = 13;
             TextXAlignment = Enum.TextXAlignment.Left;
             ZIndex = 302;
             Parent = SettingsPopup;
         })
 
-        Library:ApplyTextStroke(TransRow)
-        Library:AddToRegistry(TransRow, {
-            BackgroundColor3 = "MainColor";
-            BorderColor3 = "OutlineColor";
-            TextColor3 = "FontColor";
+        local Track = Library:Create("TextButton", {
+            AutoButtonColor = false;
+            BackgroundColor3 = Library.MainColor;
+            BorderColor3 = Library.OutlineColor;
+            BorderMode = Enum.BorderMode.Inset;
+            Position = UDim2.fromOffset(6, 22 + (2 * 18) + 16);
+            Size = UDim2.new(1, -12, 0, 12);
+            Text = "";
+            ZIndex = 302;
+            Parent = SettingsPopup;
         })
 
-        local Levels = { 0, 0.25, 0.5, 0.75 }
+        Library:AddToRegistry(Track, {
+            BackgroundColor3 = "MainColor";
+            BorderColor3 = "OutlineColor";
+        })
+
+        local Fill = Library:Create("Frame", {
+            BackgroundColor3 = Library.AccentColor;
+            BorderSizePixel = 0;
+            Size = UDim2.new(0, 0, 1, 0);
+            ZIndex = 303;
+            Parent = Track;
+        })
+
+        Library:AddToRegistry(Fill, { BackgroundColor3 = "AccentColor" })
 
         local function UpdateTransRow()
-            local Value = Library.KeybindTransparency or 0
-            TransRow.Text = string.format("Transparency: %d%%", math.floor(Value * 100 + 0.5))
+            local Value = math.clamp(tonumber(Library.KeybindTransparency) or 0, 0, 1)
+            TransparencyLabel.Text = string.format("Transparency: %d%%", math.floor(Value * 100 + 0.5))
+            Fill.Size = UDim2.new(Value, 0, 1, 0)
         end
 
-        local function NextTransparency(Current)
-            for _, Level in ipairs(Levels) do
-                if Level > Current + 0.001 then
-                    return Level
-                end
+        local function ApplyFromMouse()
+            local Width = math.max(Track.AbsoluteSize.X, 1)
+            local Alpha = math.clamp((Mouse.X - Track.AbsolutePosition.X) / Width, 0, 1)
+
+            if type(Library.SetKeybindTransparency) == "function" then
+                Library:SetKeybindTransparency(Alpha, true)
             end
-
-            return Levels[1]
         end
 
-        TransRow.MouseButton1Click:Connect(function()
+        Track.InputBegan:Connect(function(Input)
             if Library.Unloaded then
                 return
             end
 
+            if Input.UserInputType ~= Enum.UserInputType.MouseButton1 and Input.UserInputType ~= Enum.UserInputType.Touch then
+                return
+            end
+
+            ApplyFromMouse()
+
+            while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
+                ApplyFromMouse()
+                RunService.RenderStepped:Wait()
+            end
+
             if type(Library.SetKeybindTransparency) == "function" then
-                Library:SetKeybindTransparency(NextTransparency(Library.KeybindTransparency or 0))
+                Library:SetKeybindTransparency(Library.KeybindTransparency or 0)
             end
         end)
 
@@ -8753,6 +8826,18 @@ do
         Library.KeybindFilters.PopoutTransparency = Library.PopoutTransparency
         Library.KeybindFilters.WatermarkTransparency = Library.WatermarkTransparency
 
+        local FavoriteList = {}
+        for FavName, FavOn in next, Library.FavoriteNames or {} do
+            if FavOn and type(FavName) == "string" then
+                table.insert(FavoriteList, FavName)
+            end
+        end
+        table.sort(FavoriteList)
+        Library.KeybindFilters.Favorites = FavoriteList
+        if Library.ShowWatermark == true or Library.ShowWatermark == false then
+            Library.KeybindFilters.ShowWatermark = Library.ShowWatermark
+        end
+
         local Ok, Encoded = pcall(function()
             return FilterHttp:JSONEncode(Library.KeybindFilters or {})
         end)
@@ -8787,7 +8872,24 @@ do
                 KeybindTransparency = (typeof(Data.KeybindTransparency) == "number" and Data.KeybindTransparency) or 0;
                 PopoutTransparency = (typeof(Data.PopoutTransparency) == "number" and Data.PopoutTransparency) or 0;
                 WatermarkTransparency = (typeof(Data.WatermarkTransparency) == "number" and Data.WatermarkTransparency) or 0;
+                Favorites = (typeof(Data.Favorites) == "table" and Data.Favorites) or {};
+                ShowWatermark = Data.ShowWatermark;
             }
+
+            Library.FavoriteNames = {}
+            if typeof(Data.Favorites) == "table" then
+                for _, FavName in ipairs(Data.Favorites) do
+                    if type(FavName) == "string" and FavName ~= "" then
+                        Library.FavoriteNames[FavName] = true
+                    end
+                end
+            end
+
+            if Data.ShowWatermark == false then
+                Library.ShowWatermark = false
+            elseif Data.ShowWatermark == true then
+                Library.ShowWatermark = true
+            end
 
             --// Apply per-keybind visibility \\--
             for Index, Option in next, Options do
@@ -8894,15 +8996,24 @@ do
     Library:MakeDraggable(Library.Watermark)
 
     function Library:SetWatermarkVisibility(Bool)
+        Bool = Bool and true or false
         Library.Watermark.Visible = Bool
+
+        local Toggle = Toggles and Toggles.Options_ShowWatermark
+        if Toggle and Toggle.Value ~= Bool and type(Toggle.SetValue) == "function" and not Library._WmToggleSync then
+            Library._WmToggleSync = true
+            pcall(function()
+                Toggle:SetValue(Bool)
+            end)
+            Library._WmToggleSync = false
+        end
     end
 
     function Library:SetWatermark(Text)
         local X, Y = Library:GetTextBounds(Text, Library.Font, 14)
         Library.Watermark.Size = UDim2.new(0, X + 15, 0, (Y * 1.5) + 3)
-        Library:SetWatermarkVisibility(true)
-
         Library.WatermarkText.Text = Text
+        Library:SetWatermarkVisibility(Library.ShowWatermark ~= false)
     end
 
     function Library:SetWatermarkTransparency(Value, SkipSave)
@@ -9521,11 +9632,11 @@ function Library:CreateWindow(...)
         local PlaceId = game.PlaceId
         local BrowsePlaceId = PlaceId
         local BrowseUsername = ""
-        local PlaceIdInput = nil
         local UsernameInput = nil
         local Subplaces = {}
         local SubplaceNames = {}
-        local SubplaceDropdown = nil
+        local SubplacesByName = {}
+        local SelectedPlaceName = nil
 
         local Panel = Library:CreatePopout({
             Title = "Server Browser";
@@ -9646,78 +9757,114 @@ function Library:CreateWindow(...)
 
         local function FetchSubplaces()
             task.spawn(function()
-                -- resolve universe id from the current place
-                local UniverseId = nil
-                local Ok, Res = pcall(function()
-                    return game:HttpGet("https://apis.roblox.com/universes/v1/places/" .. BrowsePlaceId .. "/universe")
+                local AssetService = game:GetService("AssetService")
+                local Found = {}
+                local Success, Pages = pcall(function()
+                    return AssetService:GetGamePlacesAsync()
                 end)
 
-                if Ok and type(Res) == "string" then
-                    local DecodeOk, Data = pcall(function()
-                        return HttpService:JSONDecode(Res)
-                    end)
-
-                    if DecodeOk and type(Data) == "table" then
-                        UniverseId = Data.universeId
-                    end
-                end
-
-                if not UniverseId then
-                    -- fallback: try multiget-place-details
-                    local Ok2, Res2 = pcall(function()
-                        return game:HttpGet("https://games.roblox.com/v1/games/multiget-place-details?placeIds=" .. BrowsePlaceId)
-                    end)
-
-                    if Ok2 and type(Res2) == "string" then
-                        local DecodeOk2, Data2 = pcall(function()
-                            return HttpService:JSONDecode(Res2)
+                if Success and Pages then
+                    while true do
+                        local PageOk, Page = pcall(function()
+                            return Pages:GetCurrentPage()
                         end)
 
-                        if DecodeOk2 and type(Data2) == "table" and #Data2 > 0 then
-                            UniverseId = Data2[1].universeId
+                        if not PageOk or type(Page) ~= "table" then
+                            break
+                        end
+
+                        for _, Place in ipairs(Page) do
+                            local Name, Id = nil, nil
+                            pcall(function()
+                                Name = Place.Name or Place.name
+                                Id = Place.PlaceId or Place.placeId or Place.id
+                            end)
+
+                            Id = tonumber(Id)
+                            if Id then
+                                table.insert(Found, {
+                                    name = (type(Name) == "string" and Name ~= "" and Name) or ("Place " .. tostring(Id));
+                                    id = Id;
+                                })
+                            end
+                        end
+
+                        if Pages.IsFinished then
+                            break
+                        end
+
+                        local Advanced = pcall(function()
+                            Pages:AdvanceToNextPageAsync()
+                        end)
+                        if not Advanced then
+                            break
                         end
                     end
-                end
-
-                if not UniverseId then
-                    return
-                end
-
-                -- fetch all places in the universe
-                local PlacesOk, PlacesRes = pcall(function()
-                    return game:HttpGet("https://games.roblox.com/v2/games/" .. UniverseId .. "/places?sortOrder=Asc&limit=50")
-                end)
-
-                if not PlacesOk or type(PlacesRes) ~= "string" then
-                    return
-                end
-
-                local DecodeOk, Data = pcall(function()
-                    return HttpService:JSONDecode(PlacesRes)
-                end)
-
-                if not (DecodeOk and type(Data) == "table" and type(Data.data) == "table") then
-                    return
+                else
+                    Success = false
                 end
 
                 Subplaces = {}
-                SubplaceNames = { "Current place" }
+                SubplaceNames = {}
+                SubplacesByName = {}
 
-                -- include the current place first
-                table.insert(Subplaces, { name = "Current place", id = BrowsePlaceId })
+                local Seen = {}
+                local function AddPlace(Name, Id)
+                    Id = tonumber(Id)
+                    if not Id or Seen[Id] then
+                        return
+                    end
 
-                for _, Place in next, Data.data do
-                    if type(Place) == "table" and Place.id and Place.id ~= BrowsePlaceId then
-                        local Name = Place.name or ("Place " .. tostring(Place.id))
-                        table.insert(Subplaces, { name = Name, id = Place.id })
-                        table.insert(SubplaceNames, Name)
+                    Seen[Id] = true
+                    Name = (type(Name) == "string" and Name ~= "" and Name) or ("Place " .. tostring(Id))
+
+                    local Label = Name
+                    if SubplacesByName[Label] then
+                        Label = string.format("%s (%d)", Name, Id)
+                    end
+
+                    local Entry = { name = Label, id = Id }
+                    table.insert(Subplaces, Entry)
+                    table.insert(SubplaceNames, Label)
+                    SubplacesByName[Label] = Entry
+                end
+
+                for _, Place in ipairs(Found) do
+                    AddPlace(Place.name, Place.id)
+                end
+
+                if not Seen[game.PlaceId] then
+                    AddPlace("Current place", game.PlaceId)
+                end
+
+                for Index, Entry in ipairs(Subplaces) do
+                    if Entry.id == game.PlaceId and Index ~= 1 then
+                        table.remove(Subplaces, Index)
+                        table.remove(SubplaceNames, Index)
+                        table.insert(Subplaces, 1, Entry)
+                        table.insert(SubplaceNames, 1, Entry.name)
+                        break
                     end
                 end
 
-                -- rebuild to show the dropdown
-                pcall(function()
-                    RebuildList()
-                end)
+                SelectedPlaceName = nil
+                for _, Entry in ipairs(Subplaces) do
+                    if Entry.id == BrowsePlaceId then
+                        SelectedPlaceName = Entry.name
+                        break
+                    end
+                end
+
+                if not SelectedPlaceName and Subplaces[1] then
+                    SelectedPlaceName = Subplaces[1].name
+                    BrowsePlaceId = Subplaces[1].id
+                end
+
+                if #Found == 0 then
+                    Library:Notify("Could not load places.", 3)
+                end
+
+                pcall(RebuildList)
             end)
         end
         local function RebuildList()
@@ -9731,39 +9878,37 @@ function Library:CreateWindow(...)
                 end
             end
 
-            --// Subplace (auto-discovered) + manual Place ID + player join \\--
-            if #SubplaceNames > 1 then
-                local SubplaceDropdown = Panel:AddDropdown("ServerBrowserSubplace", {
-                    Values = SubplaceNames;
-                    Default = 1;
-                    Multi = false;
-                    Text = "Subplace";
-                })
-
-                SubplaceDropdown:OnChanged(function(Value)
-                    for _, Sp in next, Subplaces do
-                        if Sp.name == Value then
-                            BrowsePlaceId = Sp.id
-                            if PlaceIdInput then
-                                PlaceIdInput:SetValue(tostring(Sp.id))
-                            end
-                            RebuildList()
-                            FetchServers()
-                            return
-                        end
-                    end
-                end)
-            end
-            --// Subplace (e.g. Da Hood / Da Hood VC) + player join \\--
-            PlaceIdInput = Panel:AddInput("ServerBrowserPlaceId", {
-                Text = "Place ID (subplace)";
-                Default = tostring(BrowsePlaceId);
-                Numeric = true;
-                Finished = true;
+            local PlaceValues = #SubplaceNames > 0 and SubplaceNames or { "Loading places..." }
+            local PlaceDropdown = Panel:AddDropdown("ServerBrowserSubplace", {
+                Values = PlaceValues;
+                Default = SelectedPlaceName or PlaceValues[1];
+                Multi = false;
+                Searchable = #PlaceValues > 8;
+                Text = "Place";
             })
-            PlaceIdInput:OnChanged(function(Value)
-                local n = tonumber(Value)
-                if n then BrowsePlaceId = n end
+
+            PlaceDropdown:OnChanged(function(Value)
+                local Place = SubplacesByName[Value]
+                if not Place or Place.id == BrowsePlaceId then
+                    return
+                end
+
+                BrowsePlaceId = Place.id
+                SelectedPlaceName = Value
+                Servers = {}
+                FetchServers()
+            end)
+
+            Panel:AddButton("Join Place", function()
+                if not BrowsePlaceId then
+                    Library:Notify("Pick a place first.", 3)
+                    return
+                end
+
+                Library:Notify("Joining place...", 2)
+                pcall(function()
+                    TeleportService:Teleport(BrowsePlaceId, LocalPlayer)
+                end)
             end)
 
             UsernameInput = Panel:AddInput("ServerBrowserUsername", {
@@ -10000,6 +10145,51 @@ function Library:CreateWindow(...)
                 ExistingCursor:SetValue(CursorToggle.Value)
             end
         end
+
+        Panel:AddToggle("Options_ShowWatermark", {
+            Text = "Show Watermark";
+            Default = Library.ShowWatermark ~= false and Library.Watermark and Library.Watermark.Visible or false;
+            Callback = function(Value)
+                if Library._WmToggleSync then
+                    return
+                end
+
+                Library.ShowWatermark = Value and true or false
+
+                if Value then
+                    local Current = Library.WatermarkText and Library.WatermarkText.Text or ""
+                    if Current == "" then
+                        Library:SetWatermark("Linoria")
+                    else
+                        Library:SetWatermarkVisibility(true)
+                    end
+                else
+                    Library:SetWatermarkVisibility(false)
+                end
+
+                if type(Library.SaveKeybindFilters) == "function" then
+                    Library:SaveKeybindFilters()
+                end
+            end;
+        })
+
+        Panel:AddToggle("Options_ShowFavorites", {
+            Text = "Show Favorites";
+            Default = typeof(Library.FavoritesPanel) == "table" and Library.FavoritesPanel.Visible == true;
+            Callback = function(Value)
+                if Library._FavToggleSync then
+                    return
+                end
+
+                if Value then
+                    if type(Library.ShowFavorites) == "function" then
+                        Library:ShowFavorites()
+                    end
+                elseif typeof(Library.FavoritesPanel) == "table" and not Library.FavoritesPanel.Destroyed then
+                    Library.FavoritesPanel:SetVisible(false)
+                end
+            end;
+        })
 
         --// Keybind menu transparency \\--
         Panel:AddSlider("Options_KeybindTransparency", {
@@ -11292,7 +11482,7 @@ end
 
             -- local GroupboxLabel = 
             Library:CreateLabel({
-                Size = UDim2.new(1, 0, 0, 18);
+                Size = UDim2.new(1, -40, 0, 18);
                 Position = UDim2.new(0, 4, 0, 2);
                 TextSize = 14;
                 Text = Info.Name;
@@ -11329,6 +11519,89 @@ end
 
             Groupbox.Container = Container
             setmetatable(Groupbox, BaseGroupbox)
+
+            --// Star pins this section into the shared Favorites window.
+            --// P detaches it into its own floating panel.
+            local FavButton = Library:Create("TextButton", {
+                BackgroundColor3 = Library.MainColor;
+                BorderColor3 = Library.OutlineColor;
+                BorderMode = Enum.BorderMode.Inset;
+                AutoButtonColor = false;
+                Font = Enum.Font.GothamBold;
+                TextColor3 = Library.FontColor;
+                TextSize = 13;
+                Text = "";
+                Size = UDim2.new(0, 14, 0, 14);
+                Position = UDim2.new(1, -36, 0, 3);
+                ZIndex = 6;
+                Parent = BoxInner;
+            })
+
+            Library:AddToRegistry(FavButton, {
+                BackgroundColor3 = "MainColor";
+            })
+
+            local StarIcon = nil
+            local StarAsset = Library:GetCustomIcon("star")
+            if typeof(StarAsset) == "table" and type(StarAsset.Url) == "string" then
+                StarIcon = Library:Create("ImageLabel", {
+                    BackgroundTransparency = 1;
+                    Size = UDim2.fromScale(0.72, 0.72);
+                    Position = UDim2.fromScale(0.14, 0.14);
+                    Image = StarAsset.Url;
+                    ImageRectOffset = StarAsset.ImageRectOffset;
+                    ImageRectSize = StarAsset.ImageRectSize;
+                    ImageColor3 = Library.FontColor;
+                    ZIndex = 7;
+                    Parent = FavButton;
+                })
+
+                Library:AddToRegistry(StarIcon, {
+                    ImageColor3 = function()
+                        if Groupbox._Favorited then
+                            return Library.AccentColor
+                        end
+                        return Library.FontColor
+                    end;
+                })
+            else
+                FavButton.Text = "★"
+            end
+
+            local function PaintFavorite()
+                local On = Groupbox._Favorited == true
+                local Color = On and Library.AccentColor or Library.FontColor
+                FavButton.BorderColor3 = On and Library.AccentColor or Library.OutlineColor
+                if StarIcon then
+                    StarIcon.ImageColor3 = Color
+                else
+                    FavButton.TextColor3 = Color
+                end
+            end
+
+            Groupbox._PaintFavorite = PaintFavorite
+            PaintFavorite()
+
+            FavButton.MouseEnter:Connect(function()
+                FavButton.BorderColor3 = Library.AccentColor
+                if StarIcon then
+                    StarIcon.ImageColor3 = Library.AccentColor
+                else
+                    FavButton.TextColor3 = Library.AccentColor
+                end
+            end)
+
+            FavButton.MouseLeave:Connect(PaintFavorite)
+
+            FavButton.MouseButton1Click:Connect(function()
+                if Library.Unloaded then
+                    return
+                end
+
+                if type(Library.SetGroupboxFavorite) == "function" then
+                    Library:SetGroupboxFavorite(Groupbox, not Groupbox._Favorited)
+                end
+            end)
 
             --// Little pop-out button (top right of the groupbox title) that
             -- detaches this groupbox into a floating panel on screen \\--
@@ -11464,6 +11737,17 @@ end
                 -- Always create/focus popout; don't drop children silently.
                 Groupbox:Popout()
             end)
+
+            if type(Groupbox.Name) == "string" and Library.FavoriteNames and Library.FavoriteNames[Groupbox.Name] then
+                Groupbox._Favorited = true
+                PaintFavorite()
+
+                task.defer(function()
+                    if Groupbox._Favorited and type(Library.ShowFavorites) == "function" then
+                        Library:ShowFavorites()
+                    end
+                end)
+            end
 
             Groupbox:AddBlank(3)
             Groupbox:Resize()
@@ -12073,6 +12357,210 @@ Library:GiveSignal(RunService.RenderStepped:Connect(function(Delta)
 end))
 
 ----
+--// Favorites: one shared window that mirrors any section marked with F.
+do
+    local function Snapshot(Container)
+        local Seen = {}
+
+        if typeof(Container) == "Instance" then
+            for _, Child in next, Container:GetChildren() do
+                Seen[Child] = true
+            end
+        end
+
+        return Seen
+    end
+
+    local function CollectNew(Container, Seen, Into)
+        if typeof(Container) ~= "Instance" then
+            return
+        end
+
+        for _, Child in next, Container:GetChildren() do
+            if not Seen[Child] then
+                table.insert(Into, Child)
+            end
+        end
+    end
+
+    function Library:SyncFavoritesHint()
+        local Hint = Library.FavoritesHint
+        if typeof(Hint) ~= "Instance" then
+            return
+        end
+
+        local Any = false
+        for _, Groupbox in next, Library.GroupboxByPopoutName or {} do
+            if type(Groupbox) == "table" and Groupbox._Favorited and Groupbox._FavHeader then
+                Any = true
+                break
+            end
+        end
+
+        Hint.Visible = not Any
+        Hint.Size = Any and UDim2.new(1, -8, 0, 0) or UDim2.new(1, -8, 0, 36)
+    end
+
+    function Library:EnsureFavoritesPopout()
+        if typeof(Library.FavoritesPanel) == "table" and not Library.FavoritesPanel.Destroyed then
+            return Library.FavoritesPanel
+        end
+
+        local Panel = Library:CreatePopout({
+            Title = "Favorites";
+            Size = UDim2.fromOffset(300, 380);
+            Position = UDim2.new(0.78, 0, 0.42, 0);
+            Visible = false;
+            ShowWhenMenuClosed = true;
+            Resizable = true;
+        })
+
+        Library.FavoritesHint = Library:CreateLabel({
+            Size = UDim2.new(1, -8, 0, 36);
+            Text = "Click the star on a section to keep it in this window.";
+            TextSize = 14;
+            TextWrapped = true;
+            TextXAlignment = Enum.TextXAlignment.Left;
+            ZIndex = 5;
+            Parent = Panel.Container or Panel.Content;
+        })
+
+        Library.FavoritesPanel = Panel
+
+        local PreviousChanged = Panel.OnChanged
+        Panel.OnChanged = function(Visible)
+            if type(PreviousChanged) == "function" then
+                pcall(PreviousChanged, Visible)
+            end
+
+            local Toggle = Toggles and Toggles.Options_ShowFavorites
+            if Toggle and Toggle.Value ~= Visible and type(Toggle.SetValue) == "function" then
+                Library._FavToggleSync = true
+                pcall(function()
+                    Toggle:SetValue(Visible and true or false)
+                end)
+                Library._FavToggleSync = false
+            end
+        end
+
+        return Panel
+    end
+
+    function Library:ShowFavorites()
+        local Panel = Library:EnsureFavoritesPopout()
+
+        if typeof(Panel) == "table" and not Panel.Destroyed then
+            Panel:SetVisible(true)
+            pcall(function()
+                Library:FitPopoutToContent(Panel)
+            end)
+        end
+
+        return Panel
+    end
+
+    function Library:MirrorFavoriteRecord(Groupbox, Rec)
+        if typeof(Groupbox) ~= "table" or typeof(Rec) ~= "table" or Rec._FavMirrored or not Groupbox._Favorited then
+            return
+        end
+
+        local Panel = Library:EnsureFavoritesPopout()
+        local Container = Panel and (Panel.Container or Panel.Content)
+        if typeof(Panel) ~= "table" or Panel.Destroyed or typeof(Container) ~= "Instance" then
+            return
+        end
+
+        Groupbox._FavNodes = Groupbox._FavNodes or {}
+
+        if not Groupbox._FavHeader then
+            local BeforeHeader = Snapshot(Container)
+            local Title = (type(Groupbox.Name) == "string" and Groupbox.Name ~= "" and Groupbox.Name) or "Section"
+
+            pcall(function()
+                Panel:AddDivider()
+            end)
+            pcall(function()
+                Panel:AddLabel(Title)
+            end)
+
+            CollectNew(Container, BeforeHeader, Groupbox._FavNodes)
+            Groupbox._FavHeader = true
+        end
+
+        local Before = Snapshot(Container)
+        local Ok, Mirrored = pcall(function()
+            return Library:MirrorRecordIntoPanel(Panel, Rec, "_fav")
+        end)
+
+        if Ok and Mirrored ~= false then
+            Rec._FavMirrored = true
+            CollectNew(Container, Before, Groupbox._FavNodes)
+
+            for _, Node in next, Groupbox._FavNodes do
+                if typeof(Node) == "Instance" then
+                    Node.Visible = true
+                end
+            end
+
+            Library:SyncFavoritesHint()
+            pcall(function()
+                Library:FitPopoutToContent(Panel)
+            end)
+        end
+    end
+
+    function Library:SetGroupboxFavorite(Groupbox, On)
+        if typeof(Groupbox) ~= "table" then
+            return
+        end
+
+        On = On and true or false
+        Groupbox._Favorited = On
+
+        if type(Groupbox._PaintFavorite) == "function" then
+            pcall(Groupbox._PaintFavorite)
+        end
+
+        Library.FavoriteNames = Library.FavoriteNames or {}
+        if type(Groupbox.Name) == "string" and Groupbox.Name ~= "" then
+            Library.FavoriteNames[Groupbox.Name] = On or nil
+        end
+
+        if On then
+            Library:ShowFavorites()
+
+            for _, Rec in next, Groupbox.RecordedElements or {} do
+                Library:MirrorFavoriteRecord(Groupbox, Rec)
+            end
+
+            for _, Node in next, Groupbox._FavNodes or {} do
+                if typeof(Node) == "Instance" then
+                    Node.Visible = true
+                end
+            end
+        else
+            for _, Node in next, Groupbox._FavNodes or {} do
+                if typeof(Node) == "Instance" then
+                    Node.Visible = false
+                end
+            end
+
+            if typeof(Library.FavoritesPanel) == "table" then
+                pcall(function()
+                    Library:FitPopoutToContent(Library.FavoritesPanel)
+                end)
+            end
+        end
+
+        Library:SyncFavoritesHint()
+
+        if type(Library.SaveKeybindFilters) == "function" then
+            Library:SaveKeybindFilters()
+        end
+    end
+end
+
+----
 --// Record how elements are created on groupboxes/popouts so Groupbox:Popout
 --// can mirror them into a floating panel with full interactivity.
 do
@@ -12098,7 +12586,7 @@ do
                     Args.n = N
 
                     -- Skip recording the mirror elements themselves
-                    local IsMirror = type(Args[1]) == "string" and string.sub(Args[1], -7) == "_popout"
+                    local IsMirror = type(Args[1]) == "string" and (string.sub(Args[1], -7) == "_popout" or string.sub(Args[1], -4) == "_fav")
 
                     if not IsMirror then
                         Self.RecordedElements = Self.RecordedElements or {}
@@ -12120,6 +12608,15 @@ do
                                     if Library:MirrorRecordIntoPanel(Panel, Rec) then
                                         Library:FitPopoutToContent(Panel)
                                     end
+                                end
+                            end)
+                        end
+
+                        if Self._Favorited and type(Library.MirrorFavoriteRecord) == "function" then
+                            local FavRec = Rec
+                            task.defer(function()
+                                if typeof(Self) == "table" and Self._Favorited then
+                                    Library:MirrorFavoriteRecord(Self, FavRec)
                                 end
                             end)
                         end
@@ -12319,9 +12816,13 @@ end
 --// Mirror a single recorded element into a pop-out panel. Used both when the
 --// panel is first created and when new elements are added to a groupbox that
 --// already has a live pop-out, so nothing is ever left behind.
-function Library:MirrorRecordIntoPanel(Panel, Rec)
+function Library:MirrorRecordIntoPanel(Panel, Rec, Suffix)
     if typeof(Panel) ~= "table" or typeof(Rec) ~= "table" or type(Rec.Method) ~= "string" then
         return false
+    end
+
+    if type(Suffix) ~= "string" or Suffix == "" then
+        Suffix = "_popout"
     end
 
     local Args = {}
@@ -12338,7 +12839,7 @@ function Library:MirrorRecordIntoPanel(Panel, Rec)
         AddInput = true; AddKeyPicker = true; AddColorPicker = true;
     }
     if IdxMethods[Rec.Method] and type(Args[1]) == "string" then
-        Args[1] = Args[1] .. "_popout"
+        Args[1] = Args[1] .. Suffix
     end
 
     -- Start the mirror at the element's live value
@@ -12432,7 +12933,7 @@ function Library:MirrorRecordIntoPanel(Panel, Rec)
             end
 
             if type(AddonArgs[1]) == "string" then
-                AddonArgs[1] = AddonArgs[1] .. "_popout"
+                AddonArgs[1] = AddonArgs[1] .. Suffix
             end
 
             -- the original's callbacks fire through the sync below,
