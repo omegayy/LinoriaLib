@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-11-10m";
+    Version = "omgayy-2026-11-10n";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -8432,6 +8432,23 @@ do
             }
         end
 
+        -- Global ZIndex draws a child behind its parent. The window fill sits
+        -- at 201, and new rows are created around 5, so an opaque popout hides
+        -- its own text until something raises the content.
+        local function RaisePopoutContent()
+            if type(Library.BringToFront) ~= "function" then
+                return
+            end
+
+            Library:BringToFront(Content, 300)
+            Library:BringToFront(TitleBar, 400)
+            Library:BringToFront(SettingsOuter, 500)
+        end
+
+        Content.ChildAdded:Connect(function()
+            RaisePopoutContent()
+        end)
+
         function Popout:Resize()
             local Total = 0
 
@@ -8442,6 +8459,7 @@ do
             end
 
             Content.CanvasSize = UDim2.new(0, 0, 0, Total + 10)
+            RaisePopoutContent()
         end
 
         function Popout:UpdateVisibility()
