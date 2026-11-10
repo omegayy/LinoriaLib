@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-11-10h";
+    Version = "omgayy-2026-11-10i";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -4407,6 +4407,10 @@ do
                     return
                 end
 
+                if Button.FavoriteButton and Library:MouseIsOverFrame(Button.FavoriteButton) then
+                    return
+                end
+
                 if not ValidateClick(Input) then return end
                 if Button.Locked then return end
 
@@ -4836,6 +4840,8 @@ do
                 Element = Textbox;
             })
         end
+
+        Textbox.TextLabel = InputLabel
 
         return Textbox
     end
@@ -5448,6 +5454,8 @@ do
                 Element = Slider;
             })
         end
+
+        Slider.TextLabel = SliderText
 
         return Slider
     end
@@ -6145,6 +6153,8 @@ do
                 Keywords = typeof(Info.Default) == "string" and Info.Default or "";
             })
         end
+
+        Dropdown.TextLabel = DropdownLabel
 
         return Dropdown
     end
@@ -8915,9 +8925,9 @@ do
         Library.KeybindFilters.WatermarkTransparency = Library.WatermarkTransparency
 
         local FavoriteList = {}
-        for FavName, FavOn in next, Library.FavoriteNames or {} do
-            if FavOn and type(FavName) == "string" then
-                table.insert(FavoriteList, FavName)
+        for FavKey, FavOn in next, Library.FavoriteKeys or {} do
+            if FavOn and type(FavKey) == "string" then
+                table.insert(FavoriteList, FavKey)
             end
         end
         table.sort(FavoriteList)
@@ -8984,11 +8994,11 @@ do
                 Favorites = (typeof(Data.Favorites) == "table" and Data.Favorites) or {};
             }
 
-            Library.FavoriteNames = {}
+            Library.FavoriteKeys = {}
             if typeof(Data.Favorites) == "table" then
-                for _, FavName in ipairs(Data.Favorites) do
-                    if type(FavName) == "string" and FavName ~= "" then
-                        Library.FavoriteNames[FavName] = true
+                for _, FavKey in ipairs(Data.Favorites) do
+                    if type(FavKey) == "string" and string.find(FavKey, "/", 1, true) then
+                        Library.FavoriteKeys[FavKey] = true
                     end
                 end
             end
@@ -11530,7 +11540,7 @@ end
 
             -- local GroupboxLabel = 
             Library:CreateLabel({
-                Size = UDim2.new(1, -40, 0, 18);
+                Size = UDim2.new(1, 0, 0, 18);
                 Position = UDim2.new(0, 4, 0, 2);
                 TextSize = 14;
                 Text = Info.Name;
@@ -11568,91 +11578,7 @@ end
             Groupbox.Container = Container
             setmetatable(Groupbox, BaseGroupbox)
 
-            --// Star pins this section into the shared Favorites window.
-            --// P detaches it into its own floating panel.
-            local FavButton = Library:Create("TextButton", {
-                BackgroundColor3 = Library.MainColor;
-                BorderColor3 = Library.OutlineColor;
-                BorderMode = Enum.BorderMode.Inset;
-                AutoButtonColor = false;
-                Font = Enum.Font.GothamBold;
-                TextColor3 = Library.FontColor;
-                TextSize = 13;
-                Text = "";
-                Size = UDim2.new(0, 14, 0, 14);
-                Position = UDim2.new(1, -36, 0, 3);
-                ZIndex = 6;
-                Parent = BoxInner;
-            })
-
-            Library:AddToRegistry(FavButton, {
-                BackgroundColor3 = "MainColor";
-            })
-
-            local StarIcon = nil
-            local StarAsset = Library:GetCustomIcon("star")
-            if typeof(StarAsset) == "table" and type(StarAsset.Url) == "string" then
-                StarIcon = Library:Create("ImageLabel", {
-                    BackgroundTransparency = 1;
-                    Size = UDim2.fromScale(0.72, 0.72);
-                    Position = UDim2.fromScale(0.14, 0.14);
-                    Image = StarAsset.Url;
-                    ImageRectOffset = StarAsset.ImageRectOffset;
-                    ImageRectSize = StarAsset.ImageRectSize;
-                    ImageColor3 = Library.FontColor;
-                    ZIndex = 7;
-                    Parent = FavButton;
-                })
-
-                Library:AddToRegistry(StarIcon, {
-                    ImageColor3 = function()
-                        if Groupbox._Favorited then
-                            return Library.AccentColor
-                        end
-                        return Library.FontColor
-                    end;
-                })
-            else
-                FavButton.Text = "★"
-            end
-
-            local function PaintFavorite()
-                local On = Groupbox._Favorited == true
-                local Color = On and Library.AccentColor or Library.FontColor
-                FavButton.BorderColor3 = On and Library.AccentColor or Library.OutlineColor
-                if StarIcon then
-                    StarIcon.ImageColor3 = Color
-                else
-                    FavButton.TextColor3 = Color
-                end
-            end
-
-            Groupbox._PaintFavorite = PaintFavorite
-            PaintFavorite()
-
-            FavButton.MouseEnter:Connect(function()
-                FavButton.BorderColor3 = Library.AccentColor
-                if StarIcon then
-                    StarIcon.ImageColor3 = Library.AccentColor
-                else
-                    FavButton.TextColor3 = Library.AccentColor
-                end
-            end)
-
-            FavButton.MouseLeave:Connect(PaintFavorite)
-
-            FavButton.MouseButton1Click:Connect(function()
-                if Library.Unloaded then
-                    return
-                end
-
-                if type(Library.SetGroupboxFavorite) == "function" then
-                    Library:SetGroupboxFavorite(Groupbox, not Groupbox._Favorited)
-                end
-            end)
-
-            --// Little pop-out button (top right of the groupbox title) that
-            -- detaches this groupbox into a floating panel on screen \\--
+            --// P detaches this groupbox into its own floating panel.
             local PopoutButton = Library:Create("TextButton", {
                 BackgroundColor3 = Library.MainColor;
                 BorderColor3 = Library.OutlineColor;
@@ -11785,17 +11711,6 @@ end
                 -- Always create/focus popout; don't drop children silently.
                 Groupbox:Popout()
             end)
-
-            if type(Groupbox.Name) == "string" and Library.FavoriteNames and Library.FavoriteNames[Groupbox.Name] then
-                Groupbox._Favorited = true
-                PaintFavorite()
-
-                task.defer(function()
-                    if Groupbox._Favorited and type(Library.ShowFavorites) == "function" then
-                        Library:ShowFavorites()
-                    end
-                end)
-            end
 
             Groupbox:AddBlank(3)
             Groupbox:Resize()
@@ -12446,8 +12361,8 @@ do
         end
 
         local Any = false
-        for _, Groupbox in next, Library.GroupboxByPopoutName or {} do
-            if type(Groupbox) == "table" and Groupbox._Favorited and Groupbox._FavHeader then
+        for _, On in next, Library.FavoriteKeys or {} do
+            if On then
                 Any = true
                 break
             end
@@ -12473,7 +12388,7 @@ do
 
         Library.FavoritesHint = Library:CreateLabel({
             Size = UDim2.new(1, -8, 0, 36);
-            Text = "Click the star on a section to keep it in this window.";
+            Text = "Click the star on a toggle, slider, or button to pin it here.";
             TextSize = 14;
             TextWrapped = true;
             TextXAlignment = Enum.TextXAlignment.Left;
@@ -12515,8 +12430,130 @@ do
         return Panel
     end
 
-    function Library:MirrorFavoriteRecord(Groupbox, Rec)
-        if typeof(Groupbox) ~= "table" or typeof(Rec) ~= "table" or Rec._FavMirrored or not Groupbox._Favorited then
+    local FavMethods = {
+        AddToggle = true;
+        AddSlider = true;
+        AddDropdown = true;
+        AddInput = true;
+        AddButton = true;
+    }
+
+    function Library:FavoriteKey(Groupbox, Method, Element, Args)
+        local Id = nil
+        if Method == "AddButton" then
+            local Info = Args and Args[1]
+            if type(Info) == "table" then
+                Id = Info.Text
+            else
+                Id = Info
+            end
+        else
+            Id = Args and Args[1]
+        end
+
+        if type(Id) ~= "string" or Id == "" then
+            Id = (type(Element) == "table" and (Element.Text or Element.OriginalText)) or Method
+        end
+
+        local Section = (type(Groupbox) == "table" and Groupbox.Name) or ""
+        return tostring(Section) .. "/" .. tostring(Method) .. ":" .. tostring(Id)
+    end
+
+    function Library:AttachFavoriteStar(Groupbox, Rec, Element)
+        if typeof(Rec) ~= "table" or typeof(Element) ~= "table" or Rec._Star or not FavMethods[Rec.Method] then
+            return
+        end
+
+        if type(Groupbox) == "table" and (Groupbox.TableType == "Popout" or Groupbox == Library.FavoritesPanel) then
+            return
+        end
+
+        local Row = nil
+        if Rec.Method == "AddButton" then
+            Row = Element.Outer
+        else
+            Row = Element.TextLabel
+        end
+
+        if typeof(Row) ~= "Instance" then
+            return
+        end
+
+        Rec._FavKey = Library:FavoriteKey(Groupbox, Rec.Method, Element, Rec.Args)
+
+        local Star = Library:Create("TextButton", {
+            BackgroundTransparency = 1;
+            AutoButtonColor = false;
+            Text = "";
+            Size = UDim2.fromOffset(12, 12);
+            ZIndex = (Row.ZIndex or 5) + 3;
+            Parent = Row;
+        })
+
+        local Icon = nil
+        local Asset = Library:GetCustomIcon("star")
+        if typeof(Asset) == "table" and type(Asset.Url) == "string" then
+            Icon = Library:Create("ImageLabel", {
+                BackgroundTransparency = 1;
+                Size = UDim2.fromScale(1, 1);
+                Image = Asset.Url;
+                ImageRectOffset = Asset.ImageRectOffset;
+                ImageRectSize = Asset.ImageRectSize;
+                ImageColor3 = Library.FontColor;
+                ZIndex = Star.ZIndex + 1;
+                Parent = Star;
+            })
+        else
+            Star.Font = Enum.Font.GothamBold
+            Star.TextSize = 13
+            Star.Text = "★"
+            Star.TextColor3 = Library.FontColor
+        end
+
+        if Row:FindFirstChildOfClass("UIListLayout") then
+            Star.LayoutOrder = 1000
+        else
+            Star.AnchorPoint = Vector2.new(1, 0.5)
+            Star.Position = UDim2.new(1, -1, 0.5, 0)
+            if Rec.Method == "AddButton" and typeof(Element.Label) == "Instance" then
+                Element.Label.Size = UDim2.new(1, -16, 1, 0)
+            elseif Row:IsA("TextLabel") then
+                local Y = Row.Size.Y
+                Row.Size = UDim2.new(1, -14, Y.Scale, Y.Offset)
+            end
+        end
+
+        local function Paint()
+            local On = Rec._Favorited == true
+            local Color = On and Library.AccentColor or Library.FontColor
+            if Icon then
+                Icon.ImageColor3 = Color
+                Icon.ImageTransparency = On and 0 or 0.55
+            else
+                Star.TextColor3 = Color
+                Star.TextTransparency = On and 0 or 0.55
+            end
+        end
+
+        Rec._Star = Star
+        Rec._PaintFavorite = Paint
+        Element.FavoriteButton = Star
+        Paint()
+
+        Star.MouseButton1Click:Connect(function()
+            if Library.Unloaded then
+                return
+            end
+            Library:SetElementFavorite(Rec, not Rec._Favorited)
+        end)
+
+        if Library.FavoriteKeys and Library.FavoriteKeys[Rec._FavKey] then
+            Library:SetElementFavorite(Rec, true)
+        end
+    end
+
+    function Library:MirrorFavoriteRecord(Rec)
+        if typeof(Rec) ~= "table" or Rec._FavMirrored or not Rec._Favorited then
             return
         end
 
@@ -12526,22 +12563,7 @@ do
             return
         end
 
-        Groupbox._FavNodes = Groupbox._FavNodes or {}
-
-        if not Groupbox._FavHeader then
-            local BeforeHeader = Snapshot(Container)
-            local Title = (type(Groupbox.Name) == "string" and Groupbox.Name ~= "" and Groupbox.Name) or "Section"
-
-            pcall(function()
-                Panel:AddDivider()
-            end)
-            pcall(function()
-                Panel:AddLabel(Title)
-            end)
-
-            CollectNew(Container, BeforeHeader, Groupbox._FavNodes)
-            Groupbox._FavHeader = true
-        end
+        Rec._FavNodes = Rec._FavNodes or {}
 
         local Before = Snapshot(Container)
         local Ok, Mirrored = pcall(function()
@@ -12550,9 +12572,9 @@ do
 
         if Ok and Mirrored ~= false then
             Rec._FavMirrored = true
-            CollectNew(Container, Before, Groupbox._FavNodes)
+            CollectNew(Container, Before, Rec._FavNodes)
 
-            for _, Node in next, Groupbox._FavNodes do
+            for _, Node in next, Rec._FavNodes do
                 if typeof(Node) == "Instance" then
                     Node.Visible = true
                 end
@@ -12565,37 +12587,34 @@ do
         end
     end
 
-    function Library:SetGroupboxFavorite(Groupbox, On)
-        if typeof(Groupbox) ~= "table" then
+    function Library:SetElementFavorite(Rec, On)
+        if typeof(Rec) ~= "table" then
             return
         end
 
         On = On and true or false
-        Groupbox._Favorited = On
+        Rec._Favorited = On
 
-        if type(Groupbox._PaintFavorite) == "function" then
-            pcall(Groupbox._PaintFavorite)
+        if type(Rec._PaintFavorite) == "function" then
+            pcall(Rec._PaintFavorite)
         end
 
-        Library.FavoriteNames = Library.FavoriteNames or {}
-        if type(Groupbox.Name) == "string" and Groupbox.Name ~= "" then
-            Library.FavoriteNames[Groupbox.Name] = On or nil
+        Library.FavoriteKeys = Library.FavoriteKeys or {}
+        if type(Rec._FavKey) == "string" and Rec._FavKey ~= "" then
+            Library.FavoriteKeys[Rec._FavKey] = On or nil
         end
 
         if On then
             Library:ShowFavorites()
+            Library:MirrorFavoriteRecord(Rec)
 
-            for _, Rec in next, Groupbox.RecordedElements or {} do
-                Library:MirrorFavoriteRecord(Groupbox, Rec)
-            end
-
-            for _, Node in next, Groupbox._FavNodes or {} do
+            for _, Node in next, Rec._FavNodes or {} do
                 if typeof(Node) == "Instance" then
                     Node.Visible = true
                 end
             end
         else
-            for _, Node in next, Groupbox._FavNodes or {} do
+            for _, Node in next, Rec._FavNodes or {} do
                 if typeof(Node) == "Instance" then
                     Node.Visible = false
                 end
@@ -12654,6 +12673,10 @@ do
 
                         table.insert(Self.RecordedElements, Rec)
 
+                        if type(Library.AttachFavoriteStar) == "function" then
+                            Library:AttachFavoriteStar(Self, Rec, Results[1])
+                        end
+
                         --// If this groupbox already has a live pop-out, drop the
                         --// new element into it too so nothing stays hidden.
                         if typeof(Self._PopoutPanel) == "table" and not Self._PopoutPanel.Destroyed then
@@ -12664,15 +12687,6 @@ do
                                     if Library:MirrorRecordIntoPanel(Panel, Rec) then
                                         Library:FitPopoutToContent(Panel)
                                     end
-                                end
-                            end)
-                        end
-
-                        if Self._Favorited and type(Library.MirrorFavoriteRecord) == "function" then
-                            local FavRec = Rec
-                            task.defer(function()
-                                if typeof(Self) == "table" and Self._Favorited then
-                                    Library:MirrorFavoriteRecord(Self, FavRec)
                                 end
                             end)
                         end
