@@ -1289,7 +1289,9 @@ function Library:MouseIsOverFrame(Frame, Input)
         return false
     end
     local Pos = Mouse
-    if Library.IsMobile and Input then 
+    if typeof(Input) == "Instance" and Input.Position then
+        Pos = Vector2.new(Input.Position.X, Input.Position.Y)
+    elseif Library.IsMobile and Input then
         Pos = Input.Position
     end
 
@@ -3507,9 +3509,11 @@ do
             TextSize = 14;
             TextStrokeTransparency = 0;
             TextXAlignment = Enum.TextXAlignment.Left;
+            ClearTextOnFocus = false;
             ZIndex = 20,
             Parent = HueBoxInner;
         })
+        HueBox:SetAttribute("LinoriaColorPickerField", true)
 
         Library:ApplyTextStroke(HueBox)
 
@@ -3522,8 +3526,10 @@ do
         local RgbBox = Library:Create(RgbBoxBase:FindFirstChild("TextBox", true), {
             Text = "255, 255, 255",
             PlaceholderText = "RGB color",
-            TextColor3 = Library.FontColor
+            TextColor3 = Library.FontColor,
+            ClearTextOnFocus = false,
         })
+        RgbBox:SetAttribute("LinoriaColorPickerField", true)
 
         local TransparencyBoxOuter, TransparencyBoxInner, TransparencyCursor
         
@@ -4129,9 +4135,29 @@ do
 
             PickerFrameOuter.Visible = true
             Library.OpenedFrames[PickerFrameOuter] = true
+            Library._SuppressPickerOutsideCloseUntil = tick() + 0.12
             if type(Library.BringToFront) == "function" then
                 pcall(function() Library:BringToFront(PickerFrameOuter, 1000) end)
             end
+        end
+
+        local function colorPickerFieldFocused()
+            local focused = InputService:GetFocusedTextBox()
+            return focused == HueBox or focused == RgbBox
+        end
+
+        local function clickOnPickerValueField(Input)
+            return Library:MouseIsOverFrame(HueBox, Input)
+                or Library:MouseIsOverFrame(RgbBox, Input)
+                or Library:MouseIsOverFrame(HueBoxOuter, Input)
+                or Library:MouseIsOverFrame(RgbBoxBase, Input)
+        end
+
+        local function clickInsidePickerBounds(Input)
+            local pos = typeof(Input) == "Instance" and Input.Position and Vector2.new(Input.Position.X, Input.Position.Y) or Mouse
+            local AbsPos, AbsSize = PickerFrameOuter.AbsolutePosition, PickerFrameOuter.AbsoluteSize
+            return pos.X >= AbsPos.X and pos.X <= AbsPos.X + AbsSize.X
+                and pos.Y >= (AbsPos.Y - 20 - 1) and pos.Y <= AbsPos.Y + AbsSize.Y
         end
 
         function ColorPicker:Hide()
@@ -4273,15 +4299,26 @@ do
             end
 
             if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
-                local AbsPos, AbsSize = PickerFrameOuter.AbsolutePosition, PickerFrameOuter.AbsoluteSize
+                if not PickerFrameOuter.Visible then
+                    if not Library:MouseIsOverFrame(ContextMenu.Container, Input) then
+                        ContextMenu:Hide()
+                    end
+                    return
+                end
 
-                if Mouse.X < AbsPos.X or Mouse.X > AbsPos.X + AbsSize.X
-                    or Mouse.Y < (AbsPos.Y - 20 - 1) or Mouse.Y > AbsPos.Y + AbsSize.Y then
+                if Library._SuppressPickerOutsideCloseUntil and tick() < Library._SuppressPickerOutsideCloseUntil then
+                    return
+                end
 
+                if colorPickerFieldFocused() or clickOnPickerValueField(Input) then
+                    return
+                end
+
+                if not clickInsidePickerBounds(Input) then
                     ColorPicker:Hide()
                 end
 
-                if not Library:MouseIsOverFrame(ContextMenu.Container) then
+                if not Library:MouseIsOverFrame(ContextMenu.Container, Input) then
                     ContextMenu:Hide()
                 end
             end
