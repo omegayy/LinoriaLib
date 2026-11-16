@@ -3175,6 +3175,23 @@ do
             Changed = nil,
         }
 
+        local function formatRgbText(color)
+            return string.format(
+                "%d %d %d",
+                math.floor(color.R * 255),
+                math.floor(color.G * 255),
+                math.floor(color.B * 255)
+            )
+        end
+
+        local function parseRgbText(text)
+            if type(text) ~= "string" or text == "" then
+                return nil, nil, nil
+            end
+            local cleaned = text:gsub(",", " ")
+            return cleaned:match("(%d+)%s+(%d+)%s+(%d+)")
+        end
+
         local PreviousValues = {
             Value = nil,
             Transparency = nil
@@ -3524,8 +3541,8 @@ do
         })
 
         local RgbBox = Library:Create(RgbBoxBase:FindFirstChild("TextBox", true), {
-            Text = "255, 255, 255",
-            PlaceholderText = "RGB color",
+            Text = "255 255 255",
+            PlaceholderText = "R G B",
             TextColor3 = Library.FontColor,
             ClearTextOnFocus = false,
         })
@@ -4048,7 +4065,7 @@ do
             end)
 
             ContextMenu:AddOption("Copy RGB", function()
-                pcall(setclipboard, table.concat({ math.floor(ColorPicker.Value.R * 255), math.floor(ColorPicker.Value.G * 255), math.floor(ColorPicker.Value.B * 255) }, ", "))
+                pcall(setclipboard, formatRgbText(ColorPicker.Value))
                 Library:Notify("Copied RGB values to clipboard!", 2)
             end)
         end
@@ -4110,7 +4127,7 @@ do
             HueCursor.Position = UDim2.new(0, 0, ColorPicker.Hue, 0)
 
             HueBox.Text = "#" .. editing:ToHex()
-            RgbBox.Text = table.concat({ math.floor(editing.R * 255), math.floor(editing.G * 255), math.floor(editing.B * 255) }, ", ")
+            RgbBox.Text = formatRgbText(editing)
 
             if type(ColorPicker.RefreshAnimUi) == "function" then
                 ColorPicker:RefreshAnimUi()
@@ -4202,7 +4219,7 @@ do
 
         RgbBox.FocusLost:Connect(function(enter)
             if enter then
-                local r, g, b = RgbBox.Text:match("(%d+),%s*(%d+),%s*(%d+)")
+                local r, g, b = parseRgbText(RgbBox.Text)
                 if r and g and b then
                     ColorPicker.Hue, ColorPicker.Sat, ColorPicker.Vib = Color3.toHSV(Color3.fromRGB(r, g, b))
                 end
