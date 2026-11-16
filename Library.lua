@@ -1816,8 +1816,12 @@ function Library:UpdateColorsUsingRegistry()
     for Idx, Object in next, Library.Registry do
         for Property, ColorIdx in next, Object.Properties do
             if typeof(ColorIdx) == "string" then
-                Object.Instance[Property] = Library[ColorIdx]
-                ApplyTransparency(Object, Property, ColorIdx)
+                local resolved = ColorIdx
+                if Property == "BackgroundColor3" and ColorIdx == "BackgroundColor" and Library:IsInPopout(Object.Instance) then
+                    resolved = "MainColor"
+                end
+                Object.Instance[Property] = Library[resolved]
+                ApplyTransparency(Object, Property, resolved)
             elseif typeof(ColorIdx) == "function" then
                 Object.Instance[Property] = ColorIdx()
             end
@@ -9438,12 +9442,22 @@ do
         function Popout:SetTransparency(Value)
             Popout.Transparency = typeof(Value) == "number" and math.clamp(Value, 0, 1) or 0
 
-            local function Apply(Inst)
-                if not Inst:IsA("GuiObject") then
-                    return
+            local function TransparencyAppliesTo(Inst)
+                if Inst == SettingsOuter or Inst:IsDescendantOf(SettingsOuter) then
+                    return false
                 end
 
-                if Inst == SettingsOuter or Inst:IsDescendantOf(SettingsOuter) then
+                -- Fade the window chrome only. Fading mirrored controls in the
+                -- content scroll area washes them out with a grey veil.
+                if typeof(Content) == "Instance" and (Inst == Content or Inst:IsDescendantOf(Content)) then
+                    return false
+                end
+
+                return true
+            end
+
+            local function Apply(Inst)
+                if not Inst:IsA("GuiObject") or not TransparencyAppliesTo(Inst) then
                     return
                 end
 
@@ -9482,6 +9496,10 @@ do
                 end
 
                 if Inst == SettingsOuter or Inst:IsDescendantOf(SettingsOuter) then
+                    return
+                end
+
+                if typeof(Content) == "Instance" and (Inst == Content or Inst:IsDescendantOf(Content)) then
                     return
                 end
 
@@ -13089,6 +13107,13 @@ end
                     Library:FitPopoutToContent(Panel)
                 end)
 
+                pcall(function()
+                    Library:UpdateColorsUsingRegistry()
+                    if type(Panel.SetTransparency) == "function" then
+                        Panel:SetTransparency(Panel.Transparency or 0)
+                    end
+                end)
+
                 print("[Linoria Popout] Recorded="..#Recorded.." Mirrored="..Mirrored)
 
                 Groupbox.Controls = Panel
@@ -14157,10 +14182,16 @@ do
         Rec._FavMirrored = true
         Library:SyncFavoritesHint()
         RevealFavorites(Panel)
+        pcall(function()
+            Library:UpdateColorsUsingRegistry()
+        end)
 
         -- Layout's AbsoluteContentSize is often still 0 on this frame.
         task.defer(function()
             RevealFavorites(Panel)
+            pcall(function()
+                Library:UpdateColorsUsingRegistry()
+            end)
         end)
     end
 
