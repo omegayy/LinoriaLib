@@ -230,7 +230,7 @@ local Library = {
     --// Scripts/users can check getgenv().LinoriaLib.Version (or the executor
     --// console) to verify they actually loaded this build, since some
     --// executors cache game:HttpGet results for a whole session. \\--
-    Version = "omgayy-2026-11-10z";
+    Version = "omgayy-2026-11-17d";
     Registry = {};
     RegistryMap = {};
     HudRegistry = {};
@@ -301,6 +301,7 @@ local Library = {
     KeybindFilters = {
         ShowBoundOnly = false;
         ShowEnabledOnly = false;
+        ToolWindows = {};
     };
     NotifyOnError = false; -- true = Library:Notify for SafeCallback (still warns in the developer console)
     MascotLabel = nil;
@@ -914,6 +915,10 @@ function Library:MakeDraggable(Instance, Cutoff, IsMainWindow)
     if Library.IsMobile == false then
         Instance.InputBegan:Connect(function(Input)
             if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+                if Instance:GetAttribute("PositionLocked") then
+                    return
+                end
+
                 if IsMainWindow == true and Library.CantDragForced == true then
                     return
                 end
@@ -951,6 +956,11 @@ function Library:MakeDraggable(Instance, Cutoff, IsMainWindow)
         local Dragging, DraggingInput, DraggingStart, StartPosition
 
         InputService.TouchStarted:Connect(function(Input)
+            if Instance:GetAttribute("PositionLocked") then
+                Dragging = false
+                return
+            end
+
             if IsMainWindow == true and Library.CantDragForced == true then
                 Dragging = false
                 return
@@ -6187,7 +6197,10 @@ do
         })
 
         SliderOuter:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-            Slider.MaxSize = SliderOuter.AbsoluteSize.X - 2
+            local Width = SliderOuter.AbsoluteSize.X - 2
+            if Width > 1 then
+                Slider.MaxSize = Width
+            end
         end)
 
         Library:AddToRegistry(SliderOuter, {
@@ -6409,6 +6422,101 @@ do
             end
         end
 
+        local ValueBox = Library:Create("TextBox", {
+            Name = "SliderValueBox";
+            BackgroundColor3 = Color3.fromRGB(18, 18, 18);
+            BackgroundTransparency = 0;
+            BorderSizePixel = 0;
+            ClearTextOnFocus = false;
+            Font = Library.Font;
+            PlaceholderText = "Value";
+            Size = UDim2.fromScale(1, 1);
+            Text = "";
+            TextColor3 = Color3.new(1, 1, 1);
+            TextSize = 14;
+            TextXAlignment = Enum.TextXAlignment.Center;
+            Visible = false;
+            ZIndex = 10000;
+            Parent = SliderInner;
+        })
+
+        local cancelValueEdit = false
+        local holdValueFocus = false
+
+        local function closeValueBox(apply)
+            local text = ValueBox.Text
+            ValueBox.Visible = false
+            ValueBox.Parent = SliderInner
+            ValueBox.Position = UDim2.fromOffset(0, 0)
+            ValueBox.Size = UDim2.fromScale(1, 1)
+            DisplayLabel.Visible = true
+            if apply then
+                local num = tonumber((tostring(text):gsub("[^%d%-%.]", "")))
+                if num then
+                    Slider:SetValue(Round(num))
+                    Library:AttemptSave()
+                    return
+                end
+            end
+            Slider:Display()
+        end
+
+        local function openValueBox()
+            if Slider.Disabled then
+                return
+            end
+            cancelValueEdit = false
+            holdValueFocus = true
+            ValueBox.Text = tostring(Slider.Value)
+            local Gui = SliderOuter:FindFirstAncestorOfClass("ScreenGui")
+            if Gui then
+                ValueBox.Parent = Gui
+                local Pos = SliderOuter.AbsolutePosition
+                local Size = SliderOuter.AbsoluteSize
+                ValueBox.Position = UDim2.fromOffset(Pos.X, Pos.Y)
+                ValueBox.Size = UDim2.fromOffset(math.max(Size.X, 48), math.max(Size.Y, 16))
+            end
+            ValueBox.Visible = true
+            DisplayLabel.Visible = false
+            task.defer(function()
+                if ValueBox.Visible then
+                    ValueBox:CaptureFocus()
+                    pcall(function()
+                        ValueBox.CursorPosition = #ValueBox.Text + 1
+                        ValueBox.SelectionStart = 1
+                    end)
+                end
+                task.delay(0.2, function()
+                    holdValueFocus = false
+                end)
+            end)
+        end
+
+        ValueBox.FocusLost:Connect(function()
+            if holdValueFocus and ValueBox.Visible then
+                task.defer(function()
+                    if holdValueFocus and ValueBox.Visible then
+                        ValueBox:CaptureFocus()
+                    end
+                end)
+                return
+            end
+            local cancel = cancelValueEdit
+            cancelValueEdit = false
+            closeValueBox(not cancel)
+        end)
+
+        ValueBox.InputBegan:Connect(function(Input)
+            if Input.KeyCode == Enum.KeyCode.Escape then
+                cancelValueEdit = true
+                holdValueFocus = false
+                ValueBox:ReleaseFocus()
+            elseif Input.KeyCode == Enum.KeyCode.Return then
+                holdValueFocus = false
+                ValueBox:ReleaseFocus()
+            end
+        end)
+
         SliderInner.InputBegan:Connect(function(Input)
             if Slider.Disabled then
                 return
@@ -6438,18 +6546,18 @@ do
 
                 while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1 or Enum.UserInputType.Touch) do
                     local nMPos = Mouse.X
-                    local nXOffset = math.clamp(gPos + (nMPos - mPos) + Diff, 0, Slider.MaxSize) -- what in tarnation are these variable names
-                    local nXScale = Library:MapValue(nXOffset, 0, Slider.MaxSize, 0, 1)
+                    local MaxSize = Slider.MaxSize
+                    if MaxSize <= 1 then
+                        MaxSize = math.max(SliderOuter.AbsoluteSize.X - 2, 1)
+                    end
+                    local nXOffset = math.clamp(gPos + (nMPos - mPos) + Diff, 0, MaxSize) -- what in tarnation are these variable names
+                    local nXScale = Library:MapValue(nXOffset, 0, MaxSize, 0, 1)
 
                     local nValue = Slider:GetValueFromXScale(nXScale)
-                    local OldValue = Slider.Value
-                    Slider.Value = nValue
-
-                    Slider:Display()
-
-                    if nValue ~= OldValue then
-                        Library:SafeCallback(Slider.Callback, Slider.Value)
-                        Library:SafeCallback(Slider.Changed, Slider.Value)
+                    -- SetValue is what the favorites copy listens to. Writing
+                    -- .Value here updates the popout and leaves the real option behind.
+                    if nValue ~= Slider.Value then
+                        Slider:SetValue(nValue)
                     end
 
                     RunService.RenderStepped:Wait()
@@ -8207,7 +8315,6 @@ do
     function Library:LoadPopouts()
         local Contents = TryReadFile()
         if not Contents then
-            print("[Popout] LoadPopouts: no file found")
             return
         end
 
@@ -8217,9 +8324,6 @@ do
 
         if Success and typeof(Data) == "table" then
             Library.PopoutLayout = Data
-            print("[Popout] LoadPopouts: loaded " .. tostring(#Data) .. " layouts")
-        else
-            print("[Popout] LoadPopouts: failed to decode")
         end
     end
 
@@ -8262,31 +8366,18 @@ do
 
     function Library:ApplyPopoutLayouts()
         if typeof(Library.PopoutLayout) ~= "table" then
-            print("[Popout] No PopoutLayout to apply")
             return
         end
-
-        local Count = 0
 
         for _, Popout in ipairs(Library.Popouts) do
             local Saved = Library.PopoutLayout[Popout.Name]
 
             if typeof(Saved) == "table" and type(Popout.ApplyLayout) == "function" then
-                local Ok = pcall(function()
+                pcall(function()
                     Popout:ApplyLayout(Saved)
                 end)
-
-                if Ok then
-                    Count = Count + 1
-                else
-                    print("[Popout] ApplyLayout failed for: " .. tostring(Popout.Name))
-                end
-            else
-                print("[Popout] No saved layout for: " .. tostring(Popout.Name))
             end
         end
-
-        print("[Popout] Applied " .. Count .. " layout(s) to " .. #Library.Popouts .. " popout(s)")
 
         --// Groupboxes only exist as floating windows after you press P.
         --// Open the ones that were popped out when this layout was saved. \\--
@@ -8618,6 +8709,11 @@ do
             ZIndex = 202;
             Parent = ContentOuter;
         })
+
+        -- ViewportFrame and VideoFrame do not draw inside a clipping
+        -- ScrollingFrame. The outer frame clips instead.
+        Content.ClipsDescendants = false
+        ContentOuter.ClipsDescendants = true
 
         Library:Create("UIListLayout", {
             FillDirection = Enum.FillDirection.Vertical;
@@ -9184,7 +9280,6 @@ do
         end
 
         function Popout:Save()
-            print("[Popout] Save called for: " .. tostring(Popout.Name))
             Library:SavePopouts()
         end
 
@@ -9702,7 +9797,7 @@ do
         BorderMode = Enum.BorderMode.Inset;
         AnchorPoint = Vector2.new(1, 0);
         Position = UDim2.new(1, -2, 0, 21);
-        Size = UDim2.new(0, 158, 0, 104);
+        Size = UDim2.new(0, 158, 0, 122);
         Visible = false;
         ZIndex = 300;
         Parent = KeybindInner;
@@ -9841,11 +9936,22 @@ do
         function() return Library.KeybindFilters.ShowEnabledOnly end
     )
 
+    AddKeybindFilterRow("Lock position", 2,
+        function(Value)
+            Library.KeybindFilters.KeybindLocked = Value == true
+            if Library.KeybindFrame then
+                Library.KeybindFrame:SetAttribute("PositionLocked", Value == true)
+            end
+            Library:SaveKeybindFilters()
+        end,
+        function() return Library.KeybindFilters.KeybindLocked == true end
+    )
+
     --// Same drag slider the other popouts use. Stays in sync with the options slider. \\--
     do
         local TransparencyLabel = Library:CreateLabel({
             BackgroundTransparency = 1;
-            Position = UDim2.fromOffset(6, 22 + (2 * 18));
+            Position = UDim2.fromOffset(6, 22 + (3 * 18));
             Size = UDim2.new(1, -12, 0, 14);
             Text = "Transparency: 0%";
             TextSize = 13;
@@ -9859,7 +9965,7 @@ do
             BackgroundColor3 = Library.MainColor;
             BorderColor3 = Library.OutlineColor;
             BorderMode = Enum.BorderMode.Inset;
-            Position = UDim2.fromOffset(6, 22 + (2 * 18) + 16);
+            Position = UDim2.fromOffset(6, 22 + (3 * 18) + 16);
             Size = UDim2.new(1, -12, 0, 12);
             Text = "";
             ZIndex = 302;
@@ -10165,6 +10271,7 @@ do
         Library.KeybindFilters.HiddenKeybinds = Hidden
 
         --// Persist transparency settings \\--
+        Library.KeybindFilters.KeybindLocked = Library.KeybindFrame and Library.KeybindFrame:GetAttribute("PositionLocked") == true or false
         Library.KeybindFilters.KeybindTransparency = Library.KeybindTransparency
         Library.KeybindFilters.PopoutTransparency = Library.PopoutTransparency
         Library.KeybindFilters.WatermarkTransparency = Library.WatermarkTransparency
@@ -10253,6 +10360,7 @@ do
             Library.KeybindFilters = {
                 ShowBoundOnly = Data.ShowBoundOnly == true;
                 ShowEnabledOnly = Data.ShowEnabledOnly == true;
+                KeybindLocked = Data.KeybindLocked == true;
                 HiddenKeybinds = (typeof(Data.HiddenKeybinds) == "table" and Data.HiddenKeybinds) or {};
                 KeybindTransparency = (typeof(Data.KeybindTransparency) == "number" and Data.KeybindTransparency) or 0;
                 PopoutTransparency = (typeof(Data.PopoutTransparency) == "number" and Data.PopoutTransparency) or 0;
@@ -10260,6 +10368,7 @@ do
                 WatermarkVisible = Data.WatermarkVisible == true;
                 WatermarkFormat = (typeof(Data.WatermarkFormat) == "string" and Data.WatermarkFormat) or "";
                 Favorites = (typeof(Data.Favorites) == "table" and Data.Favorites) or {};
+                ToolWindows = (typeof(Data.ToolWindows) == "table" and Data.ToolWindows) or {};
             }
 
             Library.FavoriteKeys = {}
@@ -10294,6 +10403,13 @@ do
 
             --// A loaded config owns these. The filter file is only the
             --// fallback for a session that has not loaded one yet. \\--
+            if Library.KeybindFrame then
+                Library.KeybindFrame:SetAttribute("PositionLocked", Library.KeybindFilters.KeybindLocked == true)
+            end
+            if type(Library.RefreshKeybindSettingsUI) == "function" then
+                Library:RefreshKeybindSettingsUI()
+            end
+
             Library.WatermarkVisible = Library.KeybindFilters.WatermarkVisible == true
             Library.WatermarkFormat = Library.KeybindFilters.WatermarkFormat or ""
 
@@ -11080,6 +11196,8 @@ function Library:CreateWindow(...)
         -- something else refreshes the window.
         local Floor = Root:IsA("GuiObject") and Root.ZIndex or (Base or 0)
 
+        local Media = {}
+
         for _, Inst in next, Root:GetDescendants() do
             Apply(Inst)
 
@@ -11087,6 +11205,35 @@ function Library:CreateWindow(...)
                 local Original = Inst:GetAttribute("OriginalZIndex") or 1
                 Inst.ZIndex = Floor + math.max(Original, 1)
             end
+
+            if (Inst:IsA("ViewportFrame") or Inst:IsA("VideoFrame")) and Inst:GetAttribute("LinoriaMediaShown") ~= true then
+                Inst:SetAttribute("LinoriaMediaShown", true)
+                table.insert(Media, Inst)
+            end
+        end
+
+        if #Media > 0 then
+            task.defer(function()
+                for _, Inst in next, Media do
+                    local Parent = Inst.Parent
+                    if typeof(Parent) ~= "Instance" then
+                        continue
+                    end
+
+                    local Camera = Inst:IsA("ViewportFrame") and Inst.CurrentCamera or nil
+                    local Playing = Inst:IsA("VideoFrame") and Inst.Playing or false
+                    Inst.Parent = nil
+                    Inst.Parent = Parent
+
+                    if Camera then
+                        Inst.CurrentCamera = Camera
+                    end
+
+                    if Inst:IsA("VideoFrame") then
+                        Inst.Playing = Playing
+                    end
+                end
+            end)
         end
     end
 
@@ -13168,8 +13315,6 @@ end
                     end
                 end)
 
-                print("[Linoria Popout] Recorded="..#Recorded.." Mirrored="..Mirrored)
-
                 Groupbox.Controls = Panel
                 Groupbox._PopoutPanel = Panel
                 Panel:SetVisible(true)
@@ -14649,7 +14794,7 @@ end
                 if From.Type == "KeyPicker" then
                     To:SetValue({ From.Value, From.Mode, From.Modifiers }, true)
                 elseif From.Type == "ColorPicker" then
-                    To:SetValue(From.Value, From.Transparency)
+                    Library:CopyColorPickerState(From, To)
                 else
                     To:SetValue(From.Value)
                 end
@@ -14671,6 +14816,43 @@ end
 
         Chain(Orig, Mirror)
         Chain(Mirror, Orig)
+        Push(Orig, Mirror)
+    end
+
+    function Library:CopyColorPickerState(From, To)
+        if typeof(From) ~= "table" or typeof(To) ~= "table" or From == To then
+            return
+        end
+
+        local function Pack(Slot)
+            if type(Slot) ~= "table" then
+                return { 0, 0, 1 }
+            end
+            return { Slot[1] or 0, Slot[2] or 0, Slot[3] or 1 }
+        end
+
+        To.Hue, To.Sat, To.Vib = From.Hue, From.Sat, From.Vib
+        To.Slot1 = Pack(From.Slot1)
+        To.Slot2 = Pack(From.Slot2)
+        To.EditSlot = From.EditSlot == 2 and 2 or 1
+        To.Transparency = From.Transparency or 0
+        To.Animation = From.Animation or To.Animation
+        To.AnimSpeed = From.AnimSpeed or To.AnimSpeed
+        To.Animate = From.Animate == true
+        To.Value = From.Value
+
+        if type(To.Display) == "function" then
+            To:Display()
+        end
+        if type(To.RefreshAnimUi) == "function" then
+            To:RefreshAnimUi()
+        end
+
+        if To.DisplayFrame and typeof(From.Value) == "Color3" then
+            To.DisplayFrame.BackgroundColor3 = From.Value
+            To.DisplayFrame.BackgroundTransparency = To.Transparency
+            To.DisplayFrame.BorderColor3 = Library:GetDarkerColor(From.Value)
+        end
     end
 
 --// Bind two elements together so they share state in both directions
@@ -14737,7 +14919,9 @@ function Library:BindElements(A, B)
     --// without ever calling SetValue, so the setter wrappers above miss them.
     --// Chaining Changed catches those and keeps both copies in sync.
     local ElementType = (type(A.Type) == "string" and A.Type) or (type(B.Type) == "string" and B.Type)
-    if ElementType and ElementType ~= "KeyPicker" and ElementType ~= "ColorPicker" then
+    -- Sliders sync through SetValue. Hooking Changed as well fires the
+    -- original callback twice, once from the drag and once from the copy.
+    if ElementType and ElementType ~= "KeyPicker" and ElementType ~= "ColorPicker" and ElementType ~= "Slider" then
         if type(A.Changed) == "function" and A._BindChangedTo ~= B then
             local APrev = A.Changed
             A._BindChangedTo = B
@@ -14838,6 +15022,9 @@ function Library:MirrorRecordAddon(Orig, Mirror, AddonRec, Suffix)
 
     if typeof(AddonOrig) == "table" then
         if AddonRec.Method == "AddColorPicker" then
+            if typeof(AddonOrig.Value) == "Color3" then
+                AddonArgs[2].Default = AddonOrig.Value
+            end
             AddonArgs[2].Transparency = AddonOrig.Transparency
         else
             if AddonOrig.Value ~= nil then
@@ -14900,6 +15087,25 @@ function Library:MirrorRecordIntoPanel(Panel, Rec, Suffix)
     }
     if IdxMethods[Rec.Method] and type(Args[1]) == "string" then
         Args[1] = Args[1] .. Suffix
+    end
+
+    -- A viewport mirror has to keep its own copy. Reusing the object pulls
+    -- the picture out of the original window.
+    if (Rec.Method == "AddViewport" or Rec.Method == "AddImage" or Rec.Method == "AddVideo") and type(Args[2]) == "table" then
+        Args[2] = table.clone(Args[2])
+    end
+
+    if Rec.Method == "AddViewport" and type(Args[2]) == "table" then
+        Args[2].Clone = true
+    end
+
+    if Rec.Method == "AddVideo" and type(Args[2]) == "table" and typeof(Rec.Returned) == "table" then
+        if type(Rec.Returned.Video) == "string" then
+            Args[2].Video = Rec.Returned.Video
+        end
+        if typeof(Rec.Returned.Playing) == "boolean" then
+            Args[2].Playing = Rec.Returned.Playing
+        end
     end
 
     -- Start the mirror at the element's live value
@@ -15077,6 +15283,41 @@ function Library:FitPopoutToContent(Panel)
                 Library:RefreshPopoutLayout(Panel)
             end)
         end
+    end
+
+    -- The list height is still 0 on the same frame the rows are created,
+    -- so a tall image or video gets a canvas that cannot scroll to it.
+    if not Panel._FitQueued then
+        Panel._FitQueued = true
+        task.defer(function()
+            RunService.Heartbeat:Wait()
+            Panel._FitQueued = nil
+
+            if Panel.Destroyed then
+                return
+            end
+
+            pcall(function()
+                Library:RefreshPopoutLayout(Panel)
+            end)
+
+            local LaterContent = Panel.Container or Panel.Content
+            local LaterOuter = Panel.Outer
+            if typeof(LaterContent) ~= "Instance" or typeof(LaterOuter) ~= "Instance" then
+                return
+            end
+
+            local LaterLayout = LaterContent:FindFirstChildOfClass("UIListLayout")
+            local LaterNeeded = LaterLayout and LaterLayout.AbsoluteContentSize.Y or 0
+            local LaterWanted = math.clamp(LaterNeeded + 64, 120, 620)
+
+            if (not Panel.HasSavedSize) and LaterNeeded > 0 and LaterWanted > LaterOuter.AbsoluteSize.Y + 4 then
+                LaterOuter.Size = UDim2.fromOffset(LaterOuter.AbsoluteSize.X, LaterWanted)
+                pcall(function()
+                    Library:RefreshPopoutLayout(Panel)
+                end)
+            end
+        end)
     end
 end
 
