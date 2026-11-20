@@ -11899,9 +11899,68 @@ function Library:CreateWindow(...)
         Panel:AddButton({
             Text = "Rejoin";
             Func = function()
-                local TeleportService = game:GetService("TeleportService")
-                local Players = game:GetService("Players")
-                TeleportService:Teleport(game.PlaceId, Players.LocalPlayer)
+                task.spawn(function()
+                    local TeleportService = game:GetService("TeleportService")
+                    local LocalPlayer = game:GetService("Players").LocalPlayer
+                    local PlaceId = game.PlaceId
+                    local JobId = game.JobId
+
+                    if typeof(LocalPlayer) ~= "Instance" then
+                        return
+                    end
+
+                    -- Teleport(placeId) lets Roblox pick any server. Same server needs the job id.
+                    if type(JobId) ~= "string" or JobId == "" then
+                        Library:Notify("No server id. Joining a new one.", 3)
+                        pcall(function()
+                            TeleportService:Teleport(PlaceId, LocalPlayer)
+                        end)
+                        return
+                    end
+
+                    Library:Notify("Rejoining this server...", 2)
+
+                    local triedAsync = false
+                    local failedConn
+                    failedConn = TeleportService.TeleportInitFailed:Connect(function(Player)
+                        if Player ~= LocalPlayer or not failedConn then
+                            return
+                        end
+                        if not triedAsync then
+                            triedAsync = true
+                            task.defer(function()
+                                local Options = Instance.new("TeleportOptions")
+                                Options.ServerInstanceId = JobId
+                                pcall(function()
+                                    TeleportService:TeleportAsync(PlaceId, { LocalPlayer }, Options)
+                                end)
+                            end)
+                            return
+                        end
+                        failedConn:Disconnect()
+                        failedConn = nil
+                        Library:Notify("Couldn't rejoin this server.", 4)
+                    end)
+
+                    task.delay(20, function()
+                        if failedConn then
+                            failedConn:Disconnect()
+                            failedConn = nil
+                        end
+                    end)
+
+                    local ok = pcall(function()
+                        TeleportService:TeleportToPlaceInstance(PlaceId, JobId, LocalPlayer)
+                    end)
+                    if not ok and not triedAsync then
+                        triedAsync = true
+                        local Options = Instance.new("TeleportOptions")
+                        Options.ServerInstanceId = JobId
+                        pcall(function()
+                            TeleportService:TeleportAsync(PlaceId, { LocalPlayer }, Options)
+                        end)
+                    end
+                end)
             end;
         })
 
